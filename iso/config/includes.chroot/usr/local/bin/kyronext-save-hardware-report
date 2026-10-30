@@ -1,0 +1,8 @@
+#!/bin/bash
+# Rapport local automatique de la session ; aucune télémétrie.
+set -euo pipefail
+umask 077
+dir="${XDG_STATE_HOME:-$HOME/.local/state}/kyronext/hardware"
+mkdir -p -- "$dir"
+report="$dir/$(date -u +%Y%m%dT%H%M%SZ)-$$.txt"
+/usr/local/bin/kyronext-hardware-report > "$report" 2>&1

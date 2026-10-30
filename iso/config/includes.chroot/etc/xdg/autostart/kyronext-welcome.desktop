@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Bienvenue dans Kyronext OS
+Exec=/usr/local/bin/kyronext-welcome --autostart
+OnlyShowIn=KDE;
+Terminal=false

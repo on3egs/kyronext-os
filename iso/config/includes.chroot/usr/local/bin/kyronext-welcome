@@ -1,0 +1,237 @@
+#!/usr/bin/python3
+"""Accueil Qt natif Kyronext : accès aux outils locaux, sans privilèges."""
+import argparse
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+
+ASSETS = Path('/usr/share/kyronext/welcome')
+ACTIONS = (
+    ('Fichiers', 'Vos dossiers, simplement.\nExplorer avec Dolphin.',
+     'folder.svg', 'system-file-manager', ('dolphin',)),
+    ('Terminal', 'Un accès direct aux commandes\navec Konsole.',
+     'terminal.svg', 'utilities-terminal', ('konsole',)),
+    ('Paramètres', 'Personnaliser le bureau,\nle réseau et les périphériques.',
+     'settings.svg', 'preferences-system', ('systemsettings',)),
+    ('Diagnostic matériel', 'Consulter le matériel détecté,\nsans modifier les pilotes.',
+     'diagnostic.svg', 'utilities-system-monitor',
+     ('konsole', '--hold', '-e', '/usr/local/bin/kyronext-hardware-report')),
+)
+
+
+def state_file():
+    return Path(os.environ.get('XDG_STATE_HOME', Path.home() / '.local/state')) / 'kyronext/welcome-seen'
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--autostart', action='store_true',
+                        help='Ne montrer l’accueil qu’une fois dans cette session Live')
+    args = parser.parse_args(argv)
+    state = state_file()
+    if args.autostart and state.exists():
+        return 0
+
+    from PyQt6.QtCore import QSize, Qt
+    from PyQt6.QtGui import QFont, QIcon
+    from PyQt6.QtWidgets import (
+        QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QMainWindow,
+        QMessageBox, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    )
+
+    app = QApplication(sys.argv[:1])
+    app.setApplicationName('Accueil Kyronext')
+    app.setDesktopFileName('kyronext-welcome')
+    app.setFont(QFont('Noto Sans', 10))
+    app.setWindowIcon(QIcon(str(ASSETS / 'mark.svg')))
+    window = QMainWindow()
+    window.setWindowTitle('Accueil Kyronext — Kyronext OS')
+    window.setMinimumSize(680, 460)
+    window.setStyleSheet('''
+        QMainWindow, QScrollArea, #Surface { background: #101217; color: #f1f2f5; }
+        QLabel { color: #f1f2f5; background: transparent; }
+        QLabel#Brand { font-size: 13px; font-weight: 700; }
+        QLabel#Signature { color: #949aa7; font-size: 11px; }
+        QLabel#Version { color: #ff6175; background: #29141c; border: 1px solid #522131;
+                         border-radius: 12px; padding: 5px 11px; font-size: 11px; }
+        QLabel#Hero { font-size: 32px; font-weight: 700; }
+        QLabel#Subtitle { color: #aab0bc; font-size: 13px; }
+        QLabel#Section { font-size: 10px; color: #8e96a7; }
+        QFrame#Divider { background: #822237; border: none; max-height: 2px; }
+        QPushButton#ActionCard { background: #1a1d25; border: 1px solid #303541;
+                                  border-radius: 12px; text-align: left; }
+        QPushButton#ActionCard:hover { background: #24202a; border-color: #9c354d; }
+        QPushButton#ActionCard:focus { border: 2px solid #ed4762; }
+        QPushButton#ActionCard:pressed { background: #351e29; }
+        QLabel#CardTitle { font-size: 15px; font-weight: 600; }
+        QLabel#CardDetail { color: #a8afbd; font-size: 12px; }
+        QLabel#Arrow { color: #d24661; font-size: 22px; }
+        QFrame#LiveNotice { background: #171a21; border: 1px solid #303541; border-radius: 9px; }
+        QLabel#NoticeTitle { color: #e0e3eb; font-size: 11px; font-weight: 700; }
+        QLabel#NoticeDetail { color: #a0a8b7; font-size: 11px; }
+        QPushButton#Discover { background: #a3213d; color: #ffffff; border: 1px solid #c63350;
+                                border-radius: 8px; padding: 10px 20px; font-weight: 600; }
+        QPushButton#Discover:hover, QPushButton#Discover:focus { background: #c02d4b; }
+        QPushButton#Discover:pressed { background: #851b33; }
+        QScrollBar:vertical { width: 9px; background: #101217; }
+        QScrollBar::handle:vertical { background: #414653; border-radius: 4px; min-height: 25px; }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+    ''')
+
+    scroll = QScrollArea()
+    scroll.setFrameShape(QFrame.Shape.NoFrame)
+    scroll.setWidgetResizable(True)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    surface = QWidget()
+    surface.setObjectName('Surface')
+    layout = QVBoxLayout(surface)
+    layout.setContentsMargins(28, 20, 28, 20)
+    layout.setSpacing(12)
+
+    header = QHBoxLayout()
+    mark = QLabel()
+    mark.setPixmap(QIcon(str(ASSETS / 'mark.svg')).pixmap(QSize(42, 42)))
+    mark.setFixedSize(44, 44)
+    header.addWidget(mark)
+    brand = QVBoxLayout()
+    brand.setSpacing(2)
+    title = QLabel('KYRONEXT SYSTEMS')
+    title.setObjectName('Brand')
+    signature = QLabel('By Manix')
+    signature.setObjectName('Signature')
+    brand.addWidget(title)
+    brand.addWidget(signature)
+    header.addLayout(brand)
+    header.addStretch()
+    version = QLabel('0.1 · DEVELOPER PREVIEW')
+    version.setObjectName('Version')
+    header.addWidget(version)
+    layout.addLayout(header)
+
+    divider = QFrame()
+    divider.setObjectName('Divider')
+    divider.setFixedHeight(2)
+    layout.addWidget(divider)
+    hero = QLabel('Bienvenue dans Kyronext OS')
+    hero.setObjectName('Hero')
+    hero.setWordWrap(True)
+    layout.addWidget(hero)
+    subtitle = QLabel('Votre bureau. Vos outils. Un espace pour commencer.')
+    subtitle.setObjectName('Subtitle')
+    subtitle.setWordWrap(True)
+    layout.addWidget(subtitle)
+
+    section = QLabel('LES ESSENTIELS')
+    section.setObjectName('Section')
+    layout.addWidget(section)
+    grid = QGridLayout()
+    grid.setHorizontalSpacing(14)
+    grid.setVerticalSpacing(14)
+
+    def launch(command):
+        executable = shutil.which(command[0])
+        if executable is None:
+            QMessageBox.warning(window, 'Outil indisponible',
+                                'Cet outil n’est pas disponible dans cette session Live.')
+            return
+        if command[0] == 'konsole' and '-e' in command:
+            report = Path(command[-1])
+            if not report.is_file() or not os.access(report, os.X_OK):
+                QMessageBox.warning(window, 'Diagnostic indisponible',
+                                    'Le diagnostic matériel local est introuvable.')
+                return
+        try:
+            subprocess.Popen([executable, *command[1:]], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             close_fds=True, start_new_session=True)
+        except OSError:
+            QMessageBox.warning(window, 'Ouverture impossible',
+                                'L’outil n’a pas pu démarrer. Vous pouvez réessayer depuis le menu des applications.')
+
+    for index, (name, description, asset, theme_icon, command) in enumerate(ACTIONS):
+        card = QPushButton()
+        card.setObjectName('ActionCard')
+        card.setAccessibleName(name)
+        card.setAccessibleDescription(description.replace('\n', ' '))
+        card.setMinimumHeight(108)
+        card.setAutoDefault(True)
+        card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        card_layout = QHBoxLayout(card)
+        card_layout.setContentsMargins(16, 15, 16, 15)
+        card_layout.setSpacing(13)
+        icon = QIcon(str(ASSETS / asset))
+        if icon.isNull():
+            icon = QIcon.fromTheme(theme_icon)
+        image = QLabel()
+        image.setPixmap(icon.pixmap(QSize(30, 30)))
+        image.setFixedSize(34, 34)
+        card_layout.addWidget(image)
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(5)
+        card_title = QLabel(name)
+        card_title.setObjectName('CardTitle')
+        detail = QLabel(description)
+        detail.setObjectName('CardDetail')
+        detail.setWordWrap(True)
+        text_layout.addWidget(card_title)
+        text_layout.addWidget(detail)
+        card_layout.addLayout(text_layout, 1)
+        arrow = QLabel('›')
+        arrow.setObjectName('Arrow')
+        card_layout.addWidget(arrow)
+        for child in card.findChildren(QLabel):
+            child.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        card.clicked.connect(lambda checked=False, command=command: launch(command))
+        grid.addWidget(card, index // 2, index % 2)
+    grid.setColumnStretch(0, 1)
+    grid.setColumnStretch(1, 1)
+    layout.addLayout(grid)
+
+    notice = QFrame()
+    notice.setObjectName('LiveNotice')
+    notice_layout = QVBoxLayout(notice)
+    notice_layout.setContentsMargins(14, 11, 14, 11)
+    notice_layout.setSpacing(4)
+    notice_title = QLabel('SESSION LIVE · DEBIAN 13 · KDE PLASMA')
+    notice_title.setObjectName('NoticeTitle')
+    notice_detail = QLabel('Les changements sont temporaires. Cette préversion ne propose pas d’installation sur disque.')
+    notice_detail.setObjectName('NoticeDetail')
+    notice_detail.setWordWrap(True)
+    notice_layout.addWidget(notice_title)
+    notice_layout.addWidget(notice_detail)
+    layout.addWidget(notice)
+
+    footer = QHBoxLayout()
+    footer.addStretch()
+    discover = QPushButton('Découvrir le bureau  →')
+    discover.setObjectName('Discover')
+    discover.setAutoDefault(True)
+    discover.clicked.connect(window.close)
+    footer.addWidget(discover)
+    layout.addLayout(footer)
+    scroll.setWidget(surface)
+    window.setCentralWidget(scroll)
+    screen = app.primaryScreen()
+    if screen:
+        available = screen.availableGeometry()
+        window.resize(min(960, max(680, available.width() - 48)),
+                      min(690, max(460, available.height() - 48)))
+    else:
+        window.resize(900, 660)
+    window.show()
+    discover.setFocus()
+    if args.autostart:
+        try:
+            state.parent.mkdir(parents=True, exist_ok=True)
+            state.touch()
+        except OSError:
+            # Le bureau et l'accueil restent utilisables si l'état n'est pas inscriptible.
+            pass
+    return app.exec()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

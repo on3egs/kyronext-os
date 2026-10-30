@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Accueil Kyronext
+Comment=Bienvenue et accès aux outils du bureau Kyronext
+Exec=/usr/local/bin/kyronext-welcome
+Icon=/usr/share/kyronext/welcome/mark.svg
+Categories=System;Utility;
+Keywords=Kyronext;Bienvenue;Accueil;Diagnostic;
+StartupNotify=true
+Terminal=false

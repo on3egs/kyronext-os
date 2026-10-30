@@ -1,0 +1,18 @@
+#!/bin/sh
+# Exécuté après user-setup : conserver l'autologin graphique sans mot de passe partagé.
+set -eu
+if getent passwd kyronext >/dev/null; then
+    passwd -l kyronext
+fi
+passwd -l root
+rm -f /etc/sudoers.d/live
+# Trixie fournit plasmax11.desktop ; le composant Debian live-config 11
+# emploie encore plasma.desktop. Fixer explicitement la session validée.
+cat > /etc/sddm.conf <<'EOF'
+[General]
+DisplayServer=x11
+[Autologin]
+User=kyronext
+Session=plasmax11.desktop
+Relogin=true
+EOF

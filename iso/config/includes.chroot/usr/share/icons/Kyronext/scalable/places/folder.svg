@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+ <title>Fichiers — dessin original Kyronext</title>
+ <path d="M7 16a5 5 0 0 1 5-5h15l6 7h19a5 5 0 0 1 5 5v27a5 5 0 0 1-5 5H12a5 5 0 0 1-5-5z" fill="#732037"/>
+ <path d="M7 25h50v25a5 5 0 0 1-5 5H12a5 5 0 0 1-5-5z" fill="#db3653"/>
+ <path d="M9 26h46" stroke="#f17489" stroke-width="2"/>
+ <path d="M18 36h19m-19 6h13" stroke="#fff0f3" stroke-width="3" stroke-linecap="round"/>
+ <path d="M45 46h5" stroke="#fff0f3" stroke-width="2" stroke-linecap="round"/>
+</svg>

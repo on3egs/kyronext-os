@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+common='boot=live components username=kyronext hostname=kyronext locales=fr_FR.UTF-8 keyboard-layouts=fr live-config.nottyautologin live-config.nocomponents=sudo'
+lb config noauto --mode debian --distribution trixie --architectures amd64 \
+    --binary-images iso-hybrid --bootloaders "syslinux grub-efi" \
+    --debian-installer none --archive-areas "main non-free-firmware" \
+    --apt-recommends false --security true --updates true --linux-flavours amd64 \
+    --iso-application "Kyronext OS 0.1 Developer Preview" \
+    --iso-publisher "Kyronext Systems - By Manix" \
+    --iso-preparer "Kyronext Systems / Debian live-build" \
+    --iso-volume "KYRONEXT_0_1_AMD64" \
+    --bootappend-live "$common" --bootappend-live-failsafe "$common nomodeset" "$@"
