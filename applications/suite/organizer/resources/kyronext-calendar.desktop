@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Calendar
+Comment=Calendrier et rappels locaux
+Exec=kyronext-calendar
+Icon=kyronext-calendar
+Terminal=false
+Categories=Office;Calendar;

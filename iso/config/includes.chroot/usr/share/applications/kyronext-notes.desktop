@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Bloc-notes Kyronext
+Comment=Éditer et enregistrer des textes UTF-8 locaux
+Exec=/usr/bin/python3 /usr/local/bin/kyronext-notes %f
+Icon=/usr/share/icons/Kyronext/scalable/apps/kyronext-notes.svg
+MimeType=text/plain;text/markdown;
+Categories=Utility;TextEditor;
+Keywords=Kyronext;Notes;Texte;Bloc-notes;
+StartupNotify=true
+Terminal=false

@@ -1,0 +1,3 @@
+﻿machine,date,iso_sha256,boot_mode,cpu,gpu,network,audio,keyboard_mouse,storage,shutdown,status,evidence
+QEMU-Windows-11.1.0,2026-10-30,b73af49221f3dd1871390ae6e8041d7db65de834951d5a0687afcf92b3f76ac2,BIOS,qemu64,VGA-std-1234:1111-bochs-drm,VirtIO-1af4:1000-NAT-DNS-ping,non-teste,testes,CD-Live-visible,poweroff-observe,VM-seulement,logs/bios-system-checks.png
+QEMU-Windows-11.1.0,2026-10-30,b73af49221f3dd1871390ae6e8041d7db65de834951d5a0687afcf92b3f76ac2,UEFI-OVMF,qemu64,VGA-std,non-teste-dans-cette-session,non-teste,clavier-teste,CD-Live-demarre,reboot-vers-GRUB,partiel-artefact-initial,logs/uefi-session-checks.png

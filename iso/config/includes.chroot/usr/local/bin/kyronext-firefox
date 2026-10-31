@@ -1,0 +1,49 @@
+#!/usr/bin/python3
+"""Firefox ESR officiel avec un profil Kyronext facultatif et indépendant."""
+import argparse
+import importlib.util
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--plain', action='store_true', help='Ouvrir Firefox normal sans toucher au profil Kyronext')
+    parser.add_argument('--prepare-only', action='store_true', help='Préparer le profil sans ouvrir Firefox')
+    parser.add_argument('urls', nargs='*', help='Adresses HTTP/HTTPS à ouvrir sur demande')
+    args = parser.parse_args(argv)
+    path = Path(__file__).resolve().parents[2] / 'lib/kyronext/kyronext_firefox.py'
+    spec = importlib.util.spec_from_file_location('kyronext_firefox', path)
+    helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+    try:
+        if sys.platform != 'linux': raise RuntimeError('Ce lanceur est destiné à Linux.')
+        if os.geteuid() == 0: raise RuntimeError('Lancez Firefox avec un compte utilisateur normal.')
+        binary = next((p for p in (Path('/usr/bin/firefox-esr'), Path('/usr/bin/firefox')) if p.is_file() and os.access(p, os.X_OK)), None)
+        if binary is None: raise RuntimeError('Firefox ESR officiel n’est pas installé dans cette session.')
+        for url in args.urls: helper.validate_argument_url(url)
+        if args.plain:
+            if args.prepare_only: raise ValueError('--plain et --prepare-only ne peuvent pas être combinés.')
+            return subprocess.call(helper.command(binary, None, args.urls, plain=True))
+        root = helper.data_directory()
+        with helper.launcher_lock(root):
+            links, warnings = helper.load_links()
+            homepage = helper.refresh_start(root, links, warnings)
+            profile, created = helper.prepare_profile(root, homepage)
+            if args.prepare_only:
+                print('Profil préparé : ' + str(profile)); return 0
+            # Aucun argument de sécurité du moteur n'est ajouté.
+            return subprocess.call(helper.command(binary, profile, args.urls, homepage=homepage))
+    except (OSError, ValueError, RuntimeError) as error:
+        print('Firefox Kyronext : ' + str(error), file=sys.stderr)
+        if os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'):
+            try:
+                from PyQt6.QtWidgets import QApplication, QMessageBox
+                app = QApplication(sys.argv[:1])
+                QMessageBox.warning(None, 'Firefox — thème Kyronext', str(error))
+            except ImportError: pass
+        return 1
+
+
+if __name__ == '__main__': raise SystemExit(main())

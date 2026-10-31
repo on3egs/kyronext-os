@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=KITT Franco-Belge
+Comment=Ouvrir https://www.kitt-franco-belge.be dans le navigateur
+Exec=/usr/bin/python3 /usr/local/bin/kyronext-open-link kitt-franco-belge
+Icon=/usr/share/icons/Kyronext/scalable/apps/kyronext-link-kitt-franco-belge.svg
+Categories=Network;
+Terminal=false

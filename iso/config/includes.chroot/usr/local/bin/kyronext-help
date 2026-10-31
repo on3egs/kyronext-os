@@ -1,0 +1,43 @@
+#!/usr/bin/python3
+"""Aide locale Kyronext : aucun accès réseau au démarrage."""
+from pathlib import Path
+import importlib.util
+import sys
+
+
+def main():
+    from PyQt6.QtCore import QUrl
+    from PyQt6.QtWidgets import QApplication, QMainWindow, QTextBrowser
+    from PyQt6.QtGui import QDesktopServices
+    usr = Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location('kyronext_ui', usr / 'lib/kyronext/kyronext_ui.py')
+    ui = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ui)
+    app = QApplication(sys.argv)
+    ui.configure_application(app, 'help')
+    window = QMainWindow()
+    window.setWindowTitle('Centre d’aide Kyronext')
+    window.resize(900, 650)
+    browser = QTextBrowser()
+    browser.setAccessibleName('Documentation locale Kyronext')
+    browser.setOpenLinks(False)
+    browser.setOpenExternalLinks(False)
+    path = usr / 'share/kyronext/help/index.html'
+    browser.setSource(QUrl.fromLocalFile(str(path)))
+    def navigate(url):
+        if not url.scheme() or url.scheme() == 'file':
+            # Seuls le document local et ses ancres sont parcourus ici.
+            if not url.path() or Path(url.toLocalFile()).resolve() == path.resolve():
+                browser.setSource(url)
+        elif url.scheme() == 'https':
+            QDesktopServices.openUrl(url)
+    browser.anchorClicked.connect(navigate)
+    browser.setStyleSheet('QTextBrowser{background:#10141b;color:#edf0f5;border:0;padding:22px;font-size:15px;}')
+    window.setCentralWidget(browser)
+    ui.add_help_menu(window, 'help')
+    window.show()
+    return app.exec()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

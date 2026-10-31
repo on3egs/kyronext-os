@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+chmod 0755 /usr/local/lib/kyronext/ssh-host-key /usr/local/bin/kyronext-ssh
+# Aucun service démarré dans le chroot ; activation au prochain boot Live.
+systemctl enable ssh.service ModemManager.service
+# Les clés générées par le paquet ne sont ni utilisées ni distribuées.
+for key in /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub; do
+    [ ! -f "$key" ] || rm -- "$key"
+done
+mkdir -p /etc/kyronext/ssh
+chmod 0755 /etc/kyronext/ssh

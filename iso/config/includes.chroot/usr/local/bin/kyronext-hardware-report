@@ -1,0 +1,46 @@
+#!/bin/bash
+# Lecture seule : aucun pilote installé, aucun disque monté ou modifié.
+set -u
+export LC_ALL=C
+section() { printf '\n## %s\n' "$1"; }
+run() {
+    if command -v "$1" >/dev/null 2>&1; then
+        "$@" 2>&1 || printf 'Information indisponible (droits ou matériel).\n'
+    else
+        printf 'Outil absent : %s\n' "$1"
+    fi
+}
+printf 'Kyronext OS — diagnostic matériel en lecture seule\n'
+date -u
+section 'Version et démarrage'
+cat /etc/os-release
+uname -r
+if [[ -d /sys/firmware/efi ]]; then echo UEFI; else echo BIOS; fi
+section 'Processeur'
+run lscpu
+section 'Mémoire'
+run free -h
+section 'PCI : graphique, Wi-Fi, audio, stockage et pilotes utilisés'
+run lspci -nnk
+section 'Périphériques USB'
+run lsusb
+section 'Stockage : inventaire sans montage'
+run lsblk -o NAME,TYPE,TRAN,SIZE,MODEL
+section 'Réseau : état, sans adresses ni secrets'
+run nmcli -f DEVICE,TYPE,STATE device
+run rfkill list
+section 'Audio'
+run wpctl status
+run aplay -l
+section 'Messages de pilotes : accès éventuellement restreint'
+if command -v journalctl >/dev/null; then
+    journal=$(journalctl -k -b --no-pager 2>&1)
+    journal_status=$?
+    printf 'Code retour journalctl : %s\n' "$journal_status"
+    if [[ $journal_status != 0 ]] || [[ "$journal" == *'permission'* || "$journal" == *'not seeing messages'* ]]; then
+        printf '%s\n' "$journal"
+    else
+        printf '%s\n' "$journal" | grep -Ei 'firmware|failed|error|drm|wifi|iwlwifi|amdgpu|nouveau|snd' || echo 'Aucun message correspondant dans les lignes accessibles.'
+    fi
+fi
+printf '\nCe rapport ne prouve pas la compatibilité. Aucune correction automatique effectuée.\n'

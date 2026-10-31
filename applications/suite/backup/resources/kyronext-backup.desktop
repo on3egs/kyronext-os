@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Backup
+Comment=Créer une archive de sauvegarde locale
+Exec=kyronext-backup
+Icon=kyronext-backup
+Categories=Utility;Archiving;System;
+Terminal=false
+StartupNotify=true

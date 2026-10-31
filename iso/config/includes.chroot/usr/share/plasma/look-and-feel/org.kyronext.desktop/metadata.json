@@ -1,0 +1,12 @@
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Id": "org.kyronext.desktop",
+        "Name": "Kyronext OS",
+        "Description": "Écran de démarrage statique Kyronext Systems — By Manix",
+        "Authors": [{"Name": "Kyronext Systems — By Manix"}],
+        "License": "GPL-2.0-or-later",
+        "Website": "https://kyronext.eu/kyronext-os/"
+    },
+    "X-Plasma-APIVersion": "2"
+}

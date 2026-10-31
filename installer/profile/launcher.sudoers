@@ -1,0 +1,2 @@
+Defaults!/usr/bin/calamares env_keep += "DISPLAY XAUTHORITY"
+kyronext ALL=(root) NOPASSWD: /usr/bin/calamares ""

@@ -1,0 +1,8 @@
+# Outils qui doivent aussi rester dans le système installé.
+btrfs-progs
+cryptsetup
+dosfstools
+efibootmgr
+grub-efi-amd64-bin
+grub-pc-bin
+lvm2

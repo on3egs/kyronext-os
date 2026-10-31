@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+cat > /etc/os-release <<'EOF'
+NAME="Kyronext OS"
+PRETTY_NAME="Kyronext OS 0.1 Developer Preview"
+ID=kyronext
+ID_LIKE=debian
+VERSION_ID="0.1"
+VERSION_CODENAME=trixie
+VERSION="0.1 Developer Preview (Debian 13 Trixie)"
+LOGO=kyronext-logo
+HOME_URL="https://kyronext.eu/kyronext-os/"
+EOF
+passwd -l root
+chmod 0755 /usr/local/bin/kyronext-welcome
+chmod 0755 /usr/local/bin/kyronext-calculator /usr/local/bin/kyronext-notes
+if [ -f /usr/local/bin/kyronext-stardrive ]; then chmod 0755 /usr/local/bin/kyronext-stardrive; fi
+chmod 0755 /usr/local/bin/kyronext-hardware-report
+chmod 0755 /usr/local/bin/kyronext-save-hardware-report
+# Installer les lanceurs Kyronext de cette version sans dépendre d'une liste
+# fragile : les scripts restent non exécutables dans Git, le mode est défini ici.
+find /usr/local/bin -maxdepth 1 -type f -name 'kyronext-*' -exec chmod 0755 {} +
+chmod 0755 /usr/local/lib/kyronext/apply-live-account-branding
+# Select the X11 session verified in Debian Trixie.
+cat > /etc/sddm.conf <<'EOF'
+[General]
+DisplayServer=x11
+[Autologin]
+User=kyronext
+Session=plasmax11.desktop
+Relogin=true
+EOF
+# live-config g?n?re normalement une r?gle sudo : neutraliser ce composant.
+mkdir -p /etc/live/config.conf.d
+printf '%s\n' 'LIVE_USER_DEFAULT_GROUPS="audio cdrom dip floppy video plugdev netdev"' > /etc/live/config.conf.d/groups.conf

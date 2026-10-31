@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Monitor
+Comment=Mesures locales et processus
+Exec=kyronext-monitor
+Icon=kyronext-monitor
+Terminal=false
+Categories=System;Monitor;

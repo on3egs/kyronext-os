@@ -1,0 +1,12 @@
+add_executable(kyronext-update main.cpp apt_simulation.h)
+target_link_libraries(kyronext-update PRIVATE KyronextUi Qt6::Widgets)
+install(TARGETS kyronext-update RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES kyronext-update.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES resources/kyronext-update.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+
+if(BUILD_TESTING)
+  find_package(Qt6 REQUIRED COMPONENTS Test)
+  add_executable(test-kyronext-update tests/apt_simulation_test.cpp)
+  target_link_libraries(test-kyronext-update PRIVATE Qt6::Test)
+  add_test(NAME kyronext-update-simulation-parser COMMAND test-kyronext-update)
+endif()

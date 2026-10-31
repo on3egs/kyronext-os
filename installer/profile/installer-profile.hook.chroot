@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+
+cat > /etc/os-release <<'EOF'
+NAME="Kyronext OS"
+PRETTY_NAME="Kyronext OS 0.2 — installateur expérimental"
+ID=kyronext
+ID_LIKE=debian
+VERSION_ID="0.2"
+VERSION_CODENAME=trixie
+VERSION="0.2 — installateur expérimental (Debian 13 Trixie)"
+LOGO=kyronext-logo
+HOME_URL="https://kyronext.eu/kyronext-os/"
+EOF
+
+printf '%s\n' 'Kyronext OS 0.2 — installateur expérimental (Debian 13 Trixie)' > /etc/issue
+
+source_dir=/usr/share/kyronext/installer/calamares
+test -r "$source_dir/settings.conf"
+install -Dm0644 "$source_dir/settings.conf" /etc/calamares/settings.conf
+for module in packages.conf users.conf unpackfs.conf bootloader.conf; do
+    test -r "$source_dir/modules/$module"
+    install -Dm0644 "$source_dir/modules/$module" "/etc/calamares/modules/$module"
+done
+branding_dir=/usr/share/calamares/branding/kyronext
+install -Dm0644 "$source_dir/branding/kyronext/branding.desc" "$branding_dir/branding.desc"
+install -Dm0644 "$source_dir/branding/kyronext/show.qml" "$branding_dir/show.qml"
+install -Dm0644 "$source_dir/branding/kyronext/desktop.png" "$branding_dir/desktop.png"
+install -Dm0644 "$source_dir/branding/kyronext/applications.png" "$branding_dir/applications.png"
+install -Dm0644 "$source_dir/branding/kyronext/kyronext-logo.svg" "$branding_dir/kyronext-logo.svg"
+rm -rf -- "$source_dir"

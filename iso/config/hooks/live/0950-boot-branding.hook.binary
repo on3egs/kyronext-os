@@ -1,0 +1,126 @@
+#!/bin/sh
+# Hook live-build et remaster : exécuter depuis la racine de l'arbre ISO.
+# Les images sont des créations originales livrées dans includes.binary.
+set -eu
+assets=boot/kyronext
+[ -s "$assets/boot-grub.png" ] && [ -s "$assets/boot-bios.png" ] || {
+    echo 'Fonds Kyronext absents : exécuter branding/boot/render.sh puis copier includes.binary.' >&2
+    exit 1
+}
+for file in boot/grub/*.cfg isolinux/*.cfg; do
+    [ -f "$file" ] || continue
+    sed -i -e 's/Live system/Kyronext OS 0.1 Live/g' \
+        -e 's/(amd64 fail-safe mode)/(Legacy Compatibility)/g' \
+        -e 's/fail-safe mode/Legacy Compatibility/g' "$file"
+    # Certaines entrées de secours Debian n'héritent pas des options Live.
+    # Ajouter uniquement les options communes absentes, sans retirer leurs
+    # drapeaux de diagnostic ni modifier le chemin du noyau ou de l'initrd.
+    awk '
+        BEGIN {
+            count=split("username=kyronext user-fullname=Kyronext hostname=kyronext locales=fr_FR.UTF-8 keyboard-layouts=fr live-config.nottyautologin live-config.nocomponents=sudo", required, " ")
+        }
+        /^[ \t]*(linux|linuxefi|append)[ \t]/ {
+            probe=$0
+            gsub(/\t/, " ", probe)
+            if (index(" " probe " ", " boot=live ")) {
+                for (i=1; i<=count; i++) {
+                    if (!index(" " probe " ", " " required[i] " ")) {
+                        $0=$0 " " required[i]
+                        probe=probe " " required[i]
+                    }
+                }
+                if (index(" " probe " ", " nomodeset ") &&
+                    !index(" " probe " ", " kyronext.legacy=1 ")) {
+                    $0=$0 " kyronext.legacy=1"
+                    probe=probe " kyronext.legacy=1"
+                }
+            }
+        }
+        { print }
+    ' "$file" > "$file.kyronext.tmp"
+    mv "$file.kyronext.tmp" "$file"
+done
+if [ -d boot/grub ]; then
+    cp "$assets/boot-grub.png" boot/grub/splash.png
+    mkdir -p boot/grub/live-theme
+    cat > boot/grub/live-theme/theme.txt <<'EOF'
+desktop-image: "../splash.png"
+title-text: ""
+title-color: "#f4f5f8"
+title-font: "Unifont Regular 16"
+message-font: "Unifont Regular 16"
+terminal-font: "Unifont Regular 16"
+
++ boot_menu {
+    left = 10%
+    width = 80%
+    top = 55%
+    height = 30%
+    item_color = "#cbd2df"
+    selected_item_color = "#ff536c"
+    item_font = "Unifont Regular 16"
+    selected_item_font = "Unifont Regular 16"
+    item_height = 24
+    item_padding = 0
+    item_spacing = 6
+    icon_width = 0
+    icon_height = 0
+    item_icon_space = 0
+}
+
++ label {
+    left = 0
+    top = 92%-10
+    width = 100%
+    height = 20
+    text = "ENTREE : demarrer   /   e : options   /   ECHAP : retour"
+    align = "center"
+    color = "#b7bfce"
+    font = "Unifont Regular 16"
+}
+EOF
+    cat > boot/grub/theme.cfg <<'EOF'
+set color_normal=light-gray/black
+set color_highlight=white/red
+set menu_color_normal=light-gray/black
+set menu_color_highlight=white/red
+if [ -e /boot/grub/splash.png ]; then
+    set theme=/boot/grub/live-theme/theme.txt
+fi
+EOF
+    # Traductions visibles uniquement ; chemins et commandes restent intacts.
+    for file in boot/grub/grub.cfg boot/grub/loopback.cfg; do
+        [ -f "$file" ] || continue
+        sed -i -e 's/Utilities\.\.\./Outils.../g' \
+            -e 's/UEFI Firmware Settings/Reglages UEFI/g' \
+            -e 's/Verify integrity of the boot medium/Verifier le media Live/g' "$file"
+    done
+fi
+if [ -f isolinux/menu.cfg ]; then
+    cp "$assets/boot-bios.png" isolinux/splash.png
+    cat > isolinux/stdmenu.cfg <<'EOF'
+menu background splash.png
+menu color title * #fff4f5f8 #00000000 *
+menu color border * #00000000 #00000000 none
+menu color unsel * #ffcbd2df #00000000 none
+menu color hotkey * #ffff536c #00000000 none
+menu color sel * #ffffffff #ff93172f *
+menu color hotsel * #ffffffff #ff93172f *
+menu color tabmsg * #ffb7bfce #00000000 none
+menu color help * #ffb7bfce #00000000 none
+menu vshift 16
+menu rows 6
+# Ces positions sont relatives a vshift : rester dans les 30 lignes VGA.
+menu helpmsgrow 9
+menu cmdlinerow 10
+menu timeoutrow 10
+menu tabmsgrow 11
+menu tabmsg ENTREE : demarrer  /  TAB : options
+EOF
+    sed -i -e 's/^menu title Boot menu.*/menu title Kyronext OS 0.1/' \
+        -e 's/^menu width .*/menu width 76/' \
+        -e 's/^menu hshift .*/menu hshift 2/' \
+        -e 's/\^Utilities/^Outils/g' \
+        -e 's/menu title Utilities/menu title Outils/g' \
+        -e 's/\^Back\.\./^Retour/g' isolinux/menu.cfg
+fi

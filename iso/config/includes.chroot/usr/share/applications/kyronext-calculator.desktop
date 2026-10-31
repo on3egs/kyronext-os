@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Calculatrice Kyronext
+Comment=Calculatrice native, précise et sans exécution de code
+Exec=/usr/bin/python3 /usr/local/bin/kyronext-calculator
+Icon=/usr/share/icons/Kyronext/scalable/apps/kyronext-calculator.svg
+Categories=Utility;Calculator;
+Keywords=Kyronext;Calcul;Calculatrice;
+StartupNotify=true
+Terminal=false

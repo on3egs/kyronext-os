@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+# Version intentionnellement figée ; aucune clé API ni connexion lors du build.
+npm install --global --prefix /usr/local --no-audit --no-fund @openai/codex@0.166.0
+codex --version
+mkdir -p /usr/share/doc/kyronext
+codex --version > /usr/share/doc/kyronext/codex-version.txt

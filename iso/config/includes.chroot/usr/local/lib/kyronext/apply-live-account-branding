@@ -1,0 +1,69 @@
+#!/bin/sh
+# Secure and brand the live account after live-config creates it.
+set -eu
+
+if ! getent passwd kyronext >/dev/null 2>&1; then
+	exit 0
+fi
+
+user_home=$(getent passwd kyronext | cut -d: -f6)
+if [ "$user_home" != /home/kyronext ] || [ ! -d "$user_home" ]; then
+	exit 0
+fi
+
+getent group sudo >/dev/null || groupadd --system sudo
+password_hash_file=/etc/kyronext/live-password.hash
+if [ -s "$password_hash_file" ]; then
+	live_password_hash=$(cat "$password_hash_file")
+	if ! printf '%s\n' "$live_password_hash" | grep -Eq '^\$6\$(rounds=[0-9]+\$)?[A-Za-z0-9./]{1,16}\$[A-Za-z0-9./]{86}$'; then
+		echo 'Hash SHA-512 crypt du compte Live invalide' >&2
+		exit 1
+	fi
+	usermod --comment='Kyronext OS' --password="$live_password_hash" \
+		--append --groups sudo kyronext
+	rm -f -- "$password_hash_file"
+else
+	# Aucun secret par défaut : autologin graphique possible, sudo reste verrouillé.
+	usermod --comment='Kyronext OS' --lock --append --groups sudo kyronext
+fi
+passwd -l root
+rm -f /etc/sudoers.d/live
+install -d -m 0750 /etc/sudoers.d
+printf '%s\n' 'kyronext ALL=(ALL:ALL) ALL' > /etc/sudoers.d/kyronext
+chmod 0440 /etc/sudoers.d/kyronext
+visudo -cf /etc/sudoers.d/kyronext >/dev/null
+install -m 0644 /var/lib/AccountsService/icons/kyronext.png "$user_home/.face"
+install -m 0644 /var/lib/AccountsService/icons/kyronext.png "$user_home/.face.icon"
+chown kyronext:kyronext "$user_home/.face" "$user_home/.face.icon"
+
+# live-config may select Plasma Wayland after the image's initial SDDM config.
+# The explicit Legacy Compatibility boot entry requests the tested X11 session.
+if grep -Fqw -- 'kyronext.legacy=1' /proc/cmdline; then
+	cat > /etc/sddm.conf <<'EOF'
+[General]
+DisplayServer=x11
+[Autologin]
+User=kyronext
+Session=plasmax11.desktop
+Relogin=true
+EOF
+	# nomodeset can leave old machines with only the Linux framebuffer. Prefer
+	# its maintained Xorg driver over probing VMSVGA/other unsupported BARs.
+	# Apply this only when both the framebuffer and driver actually exist.
+	if [ -c /dev/fb0 ] && [ -s /usr/lib/xorg/modules/drivers/fbdev_drv.so ]; then
+		install -d -m 0755 /etc/X11/xorg.conf.d
+		cat > /etc/X11/xorg.conf.d/90-kyronext-legacy-framebuffer.conf <<'EOF'
+Section "Device"
+    Identifier "Kyronext Legacy Framebuffer"
+    Driver "fbdev"
+    Option "fbdev" "/dev/fb0"
+EndSection
+EOF
+		chmod 0644 /etc/X11/xorg.conf.d/90-kyronext-legacy-framebuffer.conf
+	fi
+	install -d -m 0755 -o kyronext -g kyronext "$user_home/.config"
+	if command -v kwriteconfig6 >/dev/null 2>&1; then
+		kwriteconfig6 --file "$user_home/.config/kwinrc" --group Compositing --key Enabled false
+		chown kyronext:kyronext "$user_home/.config/kwinrc"
+	fi
+fi

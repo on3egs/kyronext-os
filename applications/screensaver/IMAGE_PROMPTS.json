@@ -1,0 +1,13 @@
+{
+  "tool": "image_gen built-in",
+  "transparent_background": true,
+  "prompts": [
+    "Original transparent-background sprite illustration for a native screensaver. Depict KITT as the recognizable black 1982 Pontiac Firebird Trans Am TV car from Knight Rider: accurate low wedge nose and front bumper, closed pop-up headlights, sleek black body, red scanner in the narrow central nose slot. Exact straight front view, entire car including wheels and roof, isolated centered, no ground or shadow outside silhouette. High quality realistic 3D collectible rendering readable at small sizes, subtle grey highlights on black paint. No people, text, badges, Pontiac/Firebird insignia, television logos, watermark or copied television frame. True alpha transparency.",
+    "Original transparent-background sprite illustration for a native screensaver. Depict KARR as the recognizable two-tone black upper body and silver lower body 1984 Pontiac Firebird Trans Am TV car from Knight Rider: accurate low wedge nose and front bumper, closed pop-up headlights, amber scanner in narrow central nose slot. Exact straight front view, entire car including wheels and roof, isolated centered, no ground or shadow outside silhouette. High quality realistic 3D collectible rendering readable at small sizes, subtle studio highlights. No people, text, badges, Pontiac/Firebird insignia, television logos, watermark or copied television frame. True alpha transparency."
+  ],
+  "files": [
+    "kitt.png",
+    "karr.png"
+  ],
+  "note": "Original generated illustrations; no television frames, official logos or audio copied. Rights in third-party characters and vehicle designs are not claimed."
+}

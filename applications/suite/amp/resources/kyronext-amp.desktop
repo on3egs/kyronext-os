@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext AMP
+Comment=Lecteur audio local Kyronext
+Exec=kyronext-amp %F
+Icon=kyronext-amp
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+MimeType=audio/mpeg;audio/flac;audio/ogg;audio/x-wav;audio/x-mpegurl;application/vnd.apple.mpegurl;
+StartupNotify=true

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Paint
+Comment=Dessiner et enregistrer des images
+Exec=kyronext-paint %f
+Icon=kyronext-suite
+Categories=Graphics;RasterGraphics;
+MimeType=image/png;image/jpeg;image/bmp;
+Terminal=false

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Disk Health
+Comment=Diagnostic local en lecture seule de la santé des disques
+Exec=kyronext-disk-health
+Icon=kyronext-disk-health
+Terminal=false
+Categories=System;Utility;
+Keywords=SMART;disque;diagnostic;stockage;

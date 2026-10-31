@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Centre d’aide Kyronext
+Comment=Documentation locale et conseils d’utilisation
+Exec=/usr/bin/python3 /usr/local/bin/kyronext-help
+Icon=kyronext-logo
+Terminal=false
+Categories=Utility;Documentation;

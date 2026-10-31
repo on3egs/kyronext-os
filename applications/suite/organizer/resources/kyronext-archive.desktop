@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Archive
+Comment=Archives ZIP et TAR locales
+Exec=kyronext-archive
+Icon=kyronext-archive
+Terminal=false
+Categories=Utility;Archiving;

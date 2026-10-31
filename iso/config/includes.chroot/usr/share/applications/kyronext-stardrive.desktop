@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Veille Kyronext
+Comment=Voitures en perspective, animation manuelle sans verrouillage
+Exec=/usr/bin/python3 /usr/local/bin/kyronext-stardrive
+Icon=preferences-desktop-screensaver
+Categories=Utility;Amusement;
+Keywords=Veille;Kyronext;KITT;KARR;Voitures;
+StartupNotify=false
+Terminal=false

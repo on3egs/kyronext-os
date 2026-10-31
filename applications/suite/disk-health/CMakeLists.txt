@@ -1,0 +1,17 @@
+find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets)
+add_library(KyronextDiskHealthProbe STATIC health_probe.cpp health_probe.h)
+target_link_libraries(KyronextDiskHealthProbe PUBLIC Qt6::Core)
+target_include_directories(KyronextDiskHealthProbe PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_executable(kyronext-disk-health main.cpp)
+target_link_libraries(kyronext-disk-health PRIVATE KyronextUi KyronextDiskHealthProbe Qt6::Widgets)
+install(TARGETS kyronext-disk-health RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES kyronext-disk-health.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES resources/kyronext-disk-health.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+
+if(BUILD_TESTING)
+  find_package(Qt6 REQUIRED COMPONENTS Test)
+  add_executable(test-disk-health tests/health_probe_test.cpp)
+  target_link_libraries(test-disk-health PRIVATE KyronextDiskHealthProbe Qt6::Test)
+  add_test(NAME disk-health-parser-and-discovery COMMAND test-disk-health)
+endif()

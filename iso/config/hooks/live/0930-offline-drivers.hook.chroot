@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+chmod 0755 /usr/local/bin/kyronext-drivers /usr/local/bin/kyronext-driver-center
+python3 /usr/lib/kyronext/build_offline_drivers.py
+python3 /usr/lib/kyronext/driver_manager.py verify-offline >/dev/null

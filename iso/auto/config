@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+common='boot=live components username=kyronext hostname=kyronext locales=fr_FR.UTF-8 keyboard-layouts=fr live-config.nottyautologin live-config.nocomponents=sudo'
+debian_installer=${KYRONEXT_DEBIAN_INSTALLER:-none}
+case "$debian_installer" in
+    none|live) ;;
+    *) echo "Mode d'installateur Debian invalide : $debian_installer" >&2; exit 2 ;;
+esac
+iso_application=${KYRONEXT_ISO_APPLICATION:-Kyronext OS 0.1 Developer Preview}
+iso_volume=${KYRONEXT_ISO_VOLUME:-KYRONEXT_0_1_AMD64}
+lb config noauto --mode debian --distribution trixie --architectures amd64 \
+    --binary-images iso-hybrid --bootloaders "syslinux grub-efi" \
+    --debian-installer "$debian_installer" --archive-areas "main contrib non-free-firmware" \
+    --chroot-squashfs-compression-type zstd --chroot-squashfs-compression-level 6 \
+    --apt-recommends false --security true --updates true --linux-flavours amd64 \
+    --iso-application "$iso_application" \
+    --iso-publisher "Kyronext Systems - By Manix" \
+    --iso-preparer "Kyronext Systems / Debian live-build" \
+    --iso-volume "$iso_volume" \
+    --bootappend-live "$common user-fullname=Kyronext" \
+    --bootappend-live-failsafe "$common user-fullname=Kyronext nomodeset" "$@"

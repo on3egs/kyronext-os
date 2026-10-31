@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Navigator (expérimental)
+Comment=Prototype WebEngine non recommandé comme navigateur principal
+Exec=kyronext-navigator
+Icon=kyronext-navigator
+Terminal=false
+Categories=Network;WebBrowser;
+StartupNotify=true

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+ <title>Kyronext — emblème original</title>
+ <rect x="4" y="4" width="56" height="56" rx="13" fill="#131720" stroke="#424b5b" stroke-width="1.5"/>
+ <path d="M18 16h7v14l14-14h10L32 33l18 15H39L25 36v12h-7z" fill="#e7ecf4"/>
+ <path d="M39 16h10L32 33l-6-5z" fill="#ef3d59"/>
+ <path d="M17 54h30" stroke="#df2e4b" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

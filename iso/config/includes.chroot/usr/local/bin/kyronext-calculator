@@ -1,0 +1,433 @@
+#!/usr/bin/python3
+"""Calculatrice native Kyronext, sans évaluation de code ni privilèges."""
+import argparse
+import ast
+import math
+import json
+from decimal import Decimal, DecimalException, localcontext
+import importlib.util
+from pathlib import Path
+import re
+import sys
+
+
+class CalculationError(ValueError):
+    pass
+
+
+def calculate(expression):
+    """Analyse arithmétique bornée : + - * / %, parenthèses et décimaux."""
+    expression = expression.replace(',', '.').replace('×', '*').replace('÷', '/')
+    if not expression.strip():
+        raise CalculationError('Saisissez un calcul.')
+    if len(expression) > 512:
+        raise CalculationError('Expression trop longue (512 caractères maximum).')
+    tokens = re.findall(r'\d+(?:\.\d*)?|\.\d+|[()+*/%\-]|\s+|.', expression)
+    tokens = [token for token in tokens if not token.isspace()]
+    position = 0
+
+    def atom(depth):
+        nonlocal position
+        if depth > 32:
+            raise CalculationError('Trop de parenthèses ou de signes imbriqués.')
+        if position >= len(tokens):
+            raise CalculationError('Expression incomplète.')
+        token = tokens[position]
+        position += 1
+        if token in ('+', '-'):
+            value = atom(depth + 1)
+            return value if token == '+' else -value
+        if token == '(':
+            value = addition(depth + 1)
+            if position >= len(tokens) or tokens[position] != ')':
+                raise CalculationError('Parenthèse fermante manquante.')
+            position += 1
+            return value
+        if not re.fullmatch(r'\d+(?:\.\d*)?|\.\d+', token):
+            raise CalculationError('Nombre ou parenthèse attendu.')
+        return Decimal(token)
+
+    def product(depth):
+        nonlocal position
+        value = atom(depth)
+        while position < len(tokens) and tokens[position] in ('*', '/', '%'):
+            operator = tokens[position]
+            position += 1
+            right = atom(depth)
+            if operator in ('/', '%') and right == 0:
+                raise CalculationError('Division par zéro impossible.')
+            value = value * right if operator == '*' else value / right if operator == '/' else value % right
+        return value
+
+    def addition(depth):
+        nonlocal position
+        value = product(depth)
+        while position < len(tokens) and tokens[position] in ('+', '-'):
+            operator = tokens[position]
+            position += 1
+            right = product(depth)
+            value = value + right if operator == '+' else value - right
+        return value
+
+    try:
+        with localcontext() as context:
+            context.prec = 28
+            value = addition(0)
+            if position != len(tokens):
+                raise CalculationError('Opérateur manquant ou caractère non autorisé.')
+            if not value.is_finite() or value.adjusted() > 500:
+                raise CalculationError('Résultat hors limites.')
+            if value == 0:
+                return '0'
+            result = format(value, 'f')
+            return result.rstrip('0').rstrip('.') if '.' in result else result
+    except DecimalException as error:
+        raise CalculationError('Calcul hors limites.') from error
+
+
+def calculate_mode(expression, mode='standard'):
+    """Interpréteur borné : aucune évaluation de code Python."""
+    if mode == 'standard':
+        return calculate(expression)
+    if mode not in ('scientific', 'programmer') or len(expression) > 512:
+        raise CalculationError('Mode ou expression hors limites.')
+    expression = expression.replace(',', '.').replace('×', '*').replace('÷', '/')
+    try:
+        tree = ast.parse(expression, mode='eval')
+        if sum(1 for _ in ast.walk(tree)) > 200:
+            raise CalculationError('Expression trop complexe.')
+        def visit(node, depth=0):
+            if depth > 32:
+                raise CalculationError('Expression trop imbriquée.')
+            sub = lambda value: visit(value, depth + 1)
+            if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+                if mode == 'programmer':
+                    if type(node.value) is not int:
+                        raise CalculationError('Le mode programmeur utilise des entiers.')
+                    value = node.value
+                else:
+                    value = Decimal(ast.get_source_segment(expression, node))
+            elif isinstance(node, ast.Name) and mode == 'scientific' and node.id in ('pi', 'e'):
+                value = Decimal(str(math.pi if node.id == 'pi' else math.e))
+            elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub, ast.Invert)):
+                operand = sub(node.operand)
+                if isinstance(node.op, ast.Invert):
+                    if mode != 'programmer': raise CalculationError('Opérateur réservé aux entiers.')
+                    value = ~operand
+                else: value = operand if isinstance(node.op, ast.UAdd) else -operand
+            elif isinstance(node, ast.BinOp):
+                left, right = sub(node.left), sub(node.right)
+                if isinstance(node.op, ast.Add): value = left + right
+                elif isinstance(node.op, ast.Sub): value = left - right
+                elif isinstance(node.op, ast.Mult): value = left * right
+                elif isinstance(node.op, (ast.Div, ast.FloorDiv, ast.Mod)):
+                    if right == 0: raise CalculationError('Division par zéro impossible.')
+                    if isinstance(node.op, ast.Div):
+                        if mode == 'programmer': raise CalculationError('Utilisez // pour la division entière.')
+                        value = left / right
+                    elif isinstance(node.op, ast.FloorDiv): value = left // right
+                    else: value = left % right
+                elif isinstance(node.op, ast.Pow):
+                    if right != int(right) or abs(right) > 1000:
+                        raise CalculationError('Exposant entier entre -1000 et 1000 requis.')
+                    if mode == 'programmer' and right < 0: raise CalculationError('Exposant positif requis.')
+                    value = left ** int(right)
+                elif mode == 'programmer' and isinstance(node.op, (ast.BitAnd, ast.BitOr, ast.BitXor, ast.LShift, ast.RShift)):
+                    if isinstance(node.op, (ast.LShift, ast.RShift)) and not 0 <= right <= 1024:
+                        raise CalculationError('Décalage entre 0 et 1024 requis.')
+                    if isinstance(node.op, ast.BitAnd): value = left & right
+                    elif isinstance(node.op, ast.BitOr): value = left | right
+                    elif isinstance(node.op, ast.BitXor): value = left ^ right
+                    elif isinstance(node.op, ast.LShift): value = left << right
+                    else: value = left >> right
+                else: raise CalculationError('Opérateur non autorisé dans ce mode.')
+            elif mode == 'scientific' and isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and len(node.args) == 1 and not node.keywords:
+                arg = sub(node.args[0]); name = node.func.id
+                if name == 'sqrt': value = arg.sqrt()
+                elif name == 'ln': value = arg.ln()
+                elif name == 'log10': value = arg.log10()
+                elif name == 'exp':
+                    if abs(arg) > 1000: raise CalculationError('Argument exponentiel hors limites.')
+                    value = arg.exp()
+                elif name == 'abs': value = abs(arg)
+                elif name in ('sin', 'cos', 'tan', 'asin', 'acos', 'atan'):
+                    if abs(arg) > Decimal('1e12'): raise CalculationError('Angle hors limites.')
+                    value = Decimal(str(getattr(math, name)(float(arg))))
+                else: raise CalculationError('Fonction non autorisée.')
+            else: raise CalculationError('Expression non autorisée.')
+            if mode == 'programmer':
+                if type(value) is not int or value.bit_length() > 4096: raise CalculationError('Entier limité à 4096 bits.')
+            elif not value.is_finite() or (value and abs(value.adjusted()) > 500):
+                raise CalculationError('Résultat hors limites.')
+            return value
+        with localcontext() as context:
+            context.prec = 28
+            value = visit(tree.body)
+            if mode == 'programmer': return str(value)
+            if value == 0: return '0'
+            result = format(value, 'f')
+            return result.rstrip('0').rstrip('.') if '.' in result else result
+    except CalculationError: raise
+    except (SyntaxError, ValueError, TypeError, DecimalException, OverflowError, ZeroDivisionError, RecursionError) as error:
+        raise CalculationError('Expression invalide ou domaine mathématique impossible.') from error
+
+
+UNITS = {
+    'Longueur': {'m': '1', 'km': '1000', 'cm': '.01', 'mm': '.001', 'in': '.0254', 'ft': '.3048', 'mi': '1609.344'},
+    'Masse': {'kg': '1', 'g': '.001', 'mg': '.000001', 'lb': '.45359237', 'oz': '.028349523125'},
+    'Durée': {'s': '1', 'min': '60', 'h': '3600', 'jour': '86400'},
+    'Données': {'octet': '1', 'Ko': '1000', 'Mo': '1000000', 'Go': '1000000000', 'Kio': '1024', 'Mio': '1048576', 'Gio': '1073741824'},
+    'Température': {'°C': '1', '°F': '1', 'K': '1'},
+}
+
+
+def convert_unit(value, category, source, target):
+    try:
+        if len(value) > 512: raise ValueError
+        number = Decimal(value.replace(',', '.'))
+        if not number.is_finite() or (number and abs(number.adjusted()) > 500): raise ValueError
+        units = UNITS[category]
+        if source not in units or target not in units: raise ValueError
+        with localcontext() as context:
+            context.prec = 28
+            if category == 'Température':
+                celsius = (number - 32) * 5 / 9 if source == '°F' else number - Decimal('273.15') if source == 'K' else number
+                if celsius < Decimal('-273.15'): raise CalculationError('Température inférieure au zéro absolu.')
+                result = celsius * 9 / 5 + 32 if target == '°F' else celsius + Decimal('273.15') if target == 'K' else celsius
+            else: result = number * Decimal(units[source]) / Decimal(units[target])
+            text = format(result, 'f')
+            return text.rstrip('0').rstrip('.') if '.' in text else text
+    except (ValueError, KeyError, DecimalException) as error:
+        raise CalculationError('Conversion invalide.') from error
+
+
+def main(argv=None):
+    module_path = Path(__file__).resolve().parents[2] / 'lib/kyronext/kyronext_ui.py'
+    spec = importlib.util.spec_from_file_location('kyronext_ui', module_path)
+    ui = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ui)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--version', action='version', version='%(prog)s ' + ui.APP_VERSION)
+    parser.add_argument('--theme', choices=('red', 'amber'), help='Couleur initiale')
+    args = parser.parse_args(argv)
+    from PyQt6.QtCore import QSettings, Qt
+    from PyQt6.QtGui import QAction, QIcon, QKeySequence
+    from PyQt6.QtWidgets import QApplication, QComboBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QPushButton, QScrollArea, QVBoxLayout, QWidget
+
+    class Calculator(QMainWindow):
+        def __init__(self):
+            super().__init__()
+            self.setWindowTitle('Calculatrice Kyronext')
+            self.setWindowIcon(QIcon.fromTheme('kyronext-calculator', QIcon('/usr/share/icons/Kyronext/scalable/apps/kyronext-calculator.svg')))
+            self.resize(470, 760)
+            self.setMinimumSize(320, 440)
+            self.settings = QSettings('Kyronext', 'Calculator')
+            self.about_action = ui.add_help_menu(self, 'calculator')
+            self.last_result = ''
+            root = QWidget()
+            layout = QVBoxLayout(root)
+            layout.setContentsMargins(22, 20, 22, 20)
+            title = QLabel('KYRONEXT / CALCULATRICE')
+            title.setObjectName('heading')
+            layout.addWidget(title)
+            self.mode = QComboBox()
+            self.mode.addItems(['Standard', 'Scientifique', 'Programmation', 'Conversion'])
+            self.mode.setAccessibleName('Mode de calcul')
+            layout.addWidget(self.mode)
+            self.expression = QLineEdit()
+            self.expression.setPlaceholderText('Ex. : (12,5 + 3) × 2')
+            self.expression.setAccessibleName('Expression arithmétique')
+            self.expression.setMaxLength(512)
+            self.expression.setMinimumHeight(58)
+            self.expression.returnPressed.connect(self.evaluate)
+            layout.addWidget(self.expression)
+            self.result = QLineEdit()
+            self.result.setObjectName('resultDisplay')
+            self.result.setReadOnly(True)
+            self.result.setAccessibleName('Résultat du calcul')
+            self.result.setAlignment(Qt.AlignmentFlag.AlignRight)
+            self.result.setMinimumHeight(52)
+            layout.addWidget(self.result)
+            self.message = QLabel('28 chiffres significatifs · % = reste de division')
+            self.message.setWordWrap(True)
+            self.message.setMinimumHeight(38)
+            layout.addWidget(self.message)
+            self.units_panel = QWidget()
+            units_layout = QHBoxLayout(self.units_panel)
+            units_layout.setContentsMargins(0, 0, 0, 0)
+            self.category, self.source_unit, self.target_unit = QComboBox(), QComboBox(), QComboBox()
+            self.category.addItems(UNITS)
+            for widget in (self.category, self.source_unit, self.target_unit): units_layout.addWidget(widget)
+            self.category.currentTextChanged.connect(self.update_units)
+            self.update_units()
+            self.units_panel.hide()
+            layout.addWidget(self.units_panel)
+            self.mode.currentIndexChanged.connect(self.change_mode)
+            self.functions = QWidget()
+            self.function_grid = QGridLayout(self.functions)
+            self.function_grid.setContentsMargins(0, 0, 0, 0)
+            self.functions.hide()
+            layout.addWidget(self.functions)
+            grid = QGridLayout()
+            for row, keys in enumerate((('C', '(', ')', '←'), ('7', '8', '9', '÷'), ('4', '5', '6', '×'), ('1', '2', '3', '−'), ('0', ',', '%', '+'))):
+                for column, key in enumerate(keys):
+                    button = QPushButton(key)
+                    button.setMinimumHeight(44)
+                    button.setAccessibleName({'←': 'Effacer le caractère précédent', 'C': 'Effacer le calcul'}.get(key, key))
+                    button.clicked.connect(lambda checked=False, key=key: self.press(key))
+                    grid.addWidget(button, row, column)
+            layout.addLayout(grid)
+            equals = QPushButton('Calculer  =')
+            equals.setObjectName('primary')
+            equals.setMinimumHeight(44)
+            equals.clicked.connect(self.evaluate)
+            layout.addWidget(equals)
+            footer = QHBoxLayout()
+            copy = QPushButton('Copier le résultat')
+            copy.clicked.connect(self.copy_result)
+            footer.addWidget(copy)
+            self.theme = QComboBox()
+            self.theme.addItems(['Rouge', 'Ambre'])
+            self.theme.setAccessibleName('Couleur de la calculatrice')
+            default_theme = QSettings('Kyronext Systems', 'Appearance').value('appearance/palette', 'red')
+            self.theme.setCurrentIndex(1 if (args.theme or self.settings.value('theme', default_theme)) == 'amber' else 0)
+            self.theme.currentIndexChanged.connect(self.apply_theme)
+            footer.addWidget(self.theme)
+            layout.addLayout(footer)
+            history_header = QHBoxLayout()
+            history_header.addWidget(QLabel('HISTORIQUE LOCAL'))
+            erase_history = QPushButton('Effacer')
+            erase_history.clicked.connect(self.clear_history)
+            history_header.addWidget(erase_history)
+            layout.addLayout(history_header)
+            self.history = QListWidget()
+            self.history.setAccessibleName('Historique des calculs ; double-clic pour reprendre')
+            self.history.setMaximumHeight(130)
+            self.history.itemDoubleClicked.connect(self.restore_history)
+            layout.addWidget(self.history)
+            try:
+                entries = json.loads(str(self.settings.value('history', '[]')))
+                if not isinstance(entries, list): entries = []
+                for entry in entries[-100:]:
+                    if isinstance(entry, dict) and isinstance(entry.get('expression'), str) and len(entry['expression']) <= 512 and isinstance(entry.get('result'), str) and len(entry['result']) < 5000:
+                        self.add_history(entry, persist=False)
+            except (ValueError, TypeError): pass
+            scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            scroll.setWidget(root); self.setCentralWidget(scroll)
+            action = QAction('Copier le résultat', self)
+            action.setShortcut('Ctrl+Shift+C')
+            action.triggered.connect(self.copy_result)
+            self.addAction(action)
+            clear = QAction('Effacer', self)
+            clear.setShortcut(QKeySequence('Escape'))
+            clear.triggered.connect(lambda: self.press('C'))
+            self.addAction(clear)
+            self.apply_theme()
+            self.expression.setFocus()
+
+        def apply_theme(self, unused=None):
+            amber = self.theme.currentIndex() == 1
+            accent = '#e9ad52' if amber else '#ef4968'
+            self.settings.setValue('theme', 'amber' if amber else 'red')
+            self.setStyleSheet(f'''QWidget {{ background:#111318; color:#f1f2f5; font-size:14px; }}
+                QLabel#heading {{ color:{accent}; font-weight:700; padding-bottom:10px; }}
+                QLineEdit {{ background:#090b0e; border:1px solid #454b58; border-radius:7px; padding:9px; font-size:19px; selection-background-color:{accent}; selection-color:#111318; }}
+                QLineEdit#resultDisplay {{ background:#171d28; border:1px solid {accent}; font-size:27px; font-weight:600; padding:12px; }}
+                QListWidget {{ background:#0c1018; border:1px solid #333e50; border-radius:7px; padding:6px; }}
+                QListWidget::item {{ padding:6px; }}
+                QListWidget::item:selected {{ background:#303c50; color:#ffffff; }}
+                QPushButton,QComboBox {{ background:#20242d; border:1px solid #454b58; border-radius:6px; padding:8px; }}
+                QPushButton:hover,QPushButton:focus,QComboBox:focus {{ border:2px solid {accent}; }}
+                QPushButton#primary {{ background:{accent}; color:#111318; font-weight:700; }}''')
+
+        def press(self, key):
+            if key == 'C':
+                self.expression.clear()
+                self.result.clear()
+                self.last_result = ''
+            elif key == '←':
+                self.expression.backspace()
+            else:
+                self.expression.insert('-' if key == '−' else key)
+            self.expression.setFocus()
+
+        def evaluate(self):
+            try:
+                mode = ('standard', 'scientific', 'programmer', 'units')[self.mode.currentIndex()]
+                expression = self.expression.text()
+                if mode == 'units':
+                    self.last_result = convert_unit(expression, self.category.currentText(), self.source_unit.currentText(), self.target_unit.currentText())
+                else:
+                    self.last_result = calculate_mode(expression, mode)
+                self.result.setText(self.last_result)
+                self.message.setText('Résultat calculé · Ctrl+Maj+C pour copier')
+                if mode == 'programmer':
+                    integer = int(self.last_result)
+                    shorten = lambda text: text if len(text) < 80 else text[:48] + '…' + text[-16:]
+                    self.message.setText(f'Hex : {shorten(hex(integer))} · Bin : {shorten(bin(integer))}')
+                entry = {'expression': expression, 'result': self.last_result, 'mode': self.mode.currentIndex()}
+                if mode == 'units': entry.update(category=self.category.currentText(), source=self.source_unit.currentText(), target=self.target_unit.currentText())
+                self.add_history(entry)
+            except CalculationError as error:
+                self.last_result = ''
+                self.result.clear()
+                self.message.setText(str(error))
+
+        def update_units(self, unused=None):
+            for combo in (self.source_unit, self.target_unit):
+                combo.clear(); combo.addItems(UNITS[self.category.currentText()])
+            self.target_unit.setCurrentIndex(min(1, self.target_unit.count() - 1))
+
+        def change_mode(self, index):
+            self.units_panel.setVisible(index == 3)
+            while self.function_grid.count():
+                item = self.function_grid.takeAt(0)
+                if item.widget(): item.widget().deleteLater()
+            keys = ('sqrt(', 'sin(', 'cos(', 'tan(', 'ln(', 'log10(', 'exp(', '**', 'pi', 'e') if index == 1 else ('0x', '0b', '&', '|', '^', '~', '<<', '>>', '//', '**') if index == 2 else ()
+            for position, key in enumerate(keys):
+                button = QPushButton(key)
+                button.clicked.connect(lambda checked=False, key=key: self.press(key))
+                self.function_grid.addWidget(button, position // 5, position % 5)
+            self.functions.setVisible(bool(keys))
+            self.message.setText(('28 chiffres significatifs · % = reste', 'sqrt, ln, log10, exp, sin/cos/tan (radians), pi, e, **', 'Entiers : 0xff, 0b1010, &, |, ^, ~, <<, >>, //', 'Valeur à convertir dans le champ de saisie')[index])
+            self.expression.setPlaceholderText(('(12,5 + 3) × 2', 'sqrt(144) + sin(pi / 2)', '(0xff & 15) << 2', '100')[index])
+
+        def add_history(self, entry, persist=True):
+            label = f"{entry['expression']}  =  {entry['result']}"
+            if entry.get('mode') == 3:
+                label = f"{entry['expression']} {entry.get('source', '')}  →  {entry['result']} {entry.get('target', '')}"
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, entry)
+            self.history.addItem(item)
+            while self.history.count() > 100: self.history.takeItem(0)
+            self.history.scrollToBottom()
+            if persist:
+                self.settings.setValue('history', json.dumps([self.history.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.history.count())]))
+
+        def clear_history(self):
+            self.history.clear(); self.settings.remove('history')
+
+        def restore_history(self, item):
+            entry = item.data(Qt.ItemDataRole.UserRole)
+            mode = entry.get('mode', 0)
+            self.mode.setCurrentIndex(mode if type(mode) is int and 0 <= mode <= 3 else 0)
+            if mode == 3 and isinstance(entry.get('category'), str) and entry['category'] in UNITS:
+                self.category.setCurrentText(entry['category'])
+                if isinstance(entry.get('source'), str) and entry['source'] in UNITS[entry['category']]: self.source_unit.setCurrentText(entry['source'])
+                if isinstance(entry.get('target'), str) and entry['target'] in UNITS[entry['category']]: self.target_unit.setCurrentText(entry['target'])
+            self.expression.setText(entry['expression']); self.expression.setFocus()
+
+        def copy_result(self):
+            if self.last_result:
+                QApplication.clipboard().setText(self.last_result)
+                self.message.setText('Résultat copié.')
+
+    app = QApplication(sys.argv[:1])
+    ui.configure_application(app, 'calculator')
+    window = Calculator()
+    window.show()
+    return app.exec()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

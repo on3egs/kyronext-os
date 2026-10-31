@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Clock
+Comment=Horloge, chronometre et minuteur
+Exec=kyronext-clock
+Icon=kyronext-clock
+Terminal=false
+Categories=Utility;Clock;

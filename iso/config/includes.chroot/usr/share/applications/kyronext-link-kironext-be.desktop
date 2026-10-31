@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kironext Belgique
+Comment=Ouvrir https://kironext.be dans le navigateur
+Exec=/usr/bin/python3 /usr/local/bin/kyronext-open-link kironext-be
+Icon=/usr/share/icons/Kyronext/scalable/apps/kyronext-link-kironext-be.svg
+Categories=Network;
+Terminal=false

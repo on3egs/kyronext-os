@@ -1,0 +1,181 @@
+#!/usr/bin/python3
+"""Veille Kyronext manuelle : sprites PNG en perspective, sans verrouillage."""
+import argparse
+from dataclasses import dataclass
+from pathlib import Path
+import random
+import sys
+import time
+
+
+MAX_SPRITES = 24
+FPS = 15
+ASSETS = Path('/usr/share/kyronext/stardrive')
+
+
+@dataclass
+class Car:
+    asset: str
+    x: float
+    y: float
+    z: float
+
+
+class Flight:
+    """Animation indépendante de Qt ; aucun accès matériel ou réseau."""
+    def __init__(self, count=12, mode='mixed', rng=None):
+        if not 1 <= count <= MAX_SPRITES:
+            raise ValueError('Le nombre de voitures doit être compris entre 1 et 24.')
+        if mode not in ('red', 'amber', 'mixed'):
+            raise ValueError('Mode inconnu.')
+        self.rng = rng or random.Random()
+        names = ('kitt.png',) if mode == 'red' else ('karr.png',) if mode == 'amber' else ('kitt.png', 'karr.png')
+        self.cars = []
+        for index in range(count):
+            z = 0.18 + 0.9 * index / max(1, count - 1)
+            self.cars.append(Car(names[index % len(names)], self.rng.uniform(-0.8, 0.8) * z,
+                                 self.rng.uniform(-0.7, 0.7) * z, z))
+
+    def advance(self, seconds):
+        dt = max(0.0, min(seconds, 0.12))
+        for car in self.cars:
+            car.z -= dt * 0.11
+            if car.z < 0.10 or abs(car.x / car.z) > 1.7 or abs(car.y / car.z) > 1.7:
+                car.z = 1.15
+                car.x = self.rng.uniform(-0.85, 0.85)
+                car.y = self.rng.uniform(-0.75, 0.75)
+
+    @staticmethod
+    def project(car, width, height):
+        depth = max(0.10, car.z)
+        x = width * (0.5 + 0.44 * car.x / depth)
+        y = height * (0.5 + 0.44 * car.y / depth)
+        size = max(32, min(420, round(min(width, height) * 0.085 / depth)))
+        return x, y, size
+
+
+def required_assets(mode):
+    return ('kitt.png',) if mode == 'red' else ('karr.png',) if mode == 'amber' else ('kitt.png', 'karr.png')
+
+
+def should_reduce_motion(cli_value, preference_value):
+    """The command-line opt-in and the shared user preference both disable motion."""
+    if isinstance(preference_value, str):
+        preference_value = preference_value.strip().lower() in ('1', 'true', 'yes', 'on')
+    return bool(cli_value) or bool(preference_value)
+
+
+def count_argument(text):
+    value = int(text)
+    if not 1 <= value <= MAX_SPRITES:
+        raise argparse.ArgumentTypeError('Choisir entre 1 et 24 voitures.')
+    return value
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--assets-dir', type=Path, default=ASSETS)
+    parser.add_argument('--windowed', action='store_true', help='Aperçu dans une fenêtre')
+    parser.add_argument('--mode', choices=('red', 'amber', 'mixed'), default='mixed')
+    parser.add_argument('--reduced-motion', action='store_true', help='Composition immobile, sans animation')
+    parser.add_argument('--count', type=count_argument, default=12, help='Nombre de voitures, maximum 24')
+    args = parser.parse_args(argv)
+
+    from PyQt6.QtCore import QPoint, Qt, QTimer, QSettings
+    from PyQt6.QtGui import QCursor, QPainter, QPixmap
+    from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
+
+    app = QApplication(sys.argv[:1])
+    app.setApplicationName('Veille Kyronext')
+    app.setDesktopFileName('kyronext-stardrive')
+    appearance = QSettings('Kyronext Systems', 'Appearance')
+    reduce_motion = should_reduce_motion(
+        args.reduced_motion,
+        appearance.value('appearance/reducedMotion', False, type=bool))
+    images = {}
+    for name in required_assets(args.mode):
+        file = args.assets_dir / name
+        pixmap = QPixmap(str(file)) if file.is_file() else QPixmap()
+        if pixmap.isNull():
+            message = ('L’image de voiture requise est absente ou illisible :\n'
+                       f'{file}\n\nAucune voiture de remplacement ne sera affichée.')
+            print(message, file=sys.stderr)
+            QMessageBox.critical(None, 'Veille Kyronext indisponible', message)
+            return 2
+        # Les variantes sont calculées une fois. Pas de redimensionnement lourd à chaque image.
+        images[name] = {size: pixmap.scaledToWidth(size, Qt.TransformationMode.SmoothTransformation)
+                        for size in range(32, 433, 16)}
+
+    class StarDrive(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.setWindowTitle('Veille Kyronext — By Manix')
+            self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
+            self.setMouseTracking(True)
+            self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            self.setCursor(Qt.CursorShape.BlankCursor)
+            self.flight = Flight(args.count, args.mode)
+            self.started = time.monotonic()
+            self.last_frame = self.started
+            self.anchor = QCursor.pos()
+            self.timer = None
+            if not reduce_motion:
+                self.timer = QTimer(self)
+                # PreciseTimer ne se déclenche pas en avance : 67 ms plafonne à moins de 15 FPS.
+                self.timer.setTimerType(Qt.TimerType.PreciseTimer)
+                self.timer.timeout.connect(self.animate)
+                self.timer.start(round(1000 / FPS))
+
+        def animate(self):
+            now = time.monotonic()
+            self.flight.advance(now - self.last_frame)
+            self.last_frame = now
+            self.update()
+
+        def paintEvent(self, event):
+            painter = QPainter(self)
+            painter.fillRect(self.rect(), Qt.GlobalColor.black)
+            for car in sorted(self.flight.cars, key=lambda item: item.z, reverse=True):
+                x, y, width = self.flight.project(car, self.width(), self.height())
+                key = max(32, min(432, 32 + round((width - 32) / 16) * 16))
+                sprite = images[car.asset][key]
+                painter.drawPixmap(QPoint(round(x - sprite.width() / 2),
+                                          round(y - sprite.height() / 2)), sprite)
+
+        def ready_for_input(self):
+            return time.monotonic() - self.started >= 0.85
+
+        def keyPressEvent(self, event):
+            if event.key() == Qt.Key.Key_Escape or self.ready_for_input():
+                self.close()
+
+        def mousePressEvent(self, event):
+            if self.ready_for_input():
+                self.close()
+
+        def wheelEvent(self, event):
+            if self.ready_for_input():
+                self.close()
+
+        def mouseMoveEvent(self, event):
+            position = event.globalPosition().toPoint()
+            if not self.ready_for_input():
+                self.anchor = position
+            elif (position - self.anchor).manhattanLength() > 18:
+                self.close()
+
+    window = StarDrive()
+    if args.windowed:
+        screen = app.primaryScreen()
+        area = screen.availableGeometry() if screen else None
+        window.resize(min(1040, max(480, area.width() - 64)) if area else 1000,
+                      min(700, max(320, area.height() - 64)) if area else 650)
+        window.show()
+    else:
+        window.showFullScreen()
+    window.setFocus()
+    return app.exec()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

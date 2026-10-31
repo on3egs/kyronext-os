@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Pilotes et connexion Kyronext
+Comment=Diagnostic matériel, réserve hors ligne et réparation Wi-Fi
+Exec=/usr/local/bin/kyronext-driver-center
+Icon=preferences-system
+Terminal=false
+Categories=System;Settings;HardwareSettings;
+Keywords=wifi;pilotes;firmware;réseau;diagnostic;

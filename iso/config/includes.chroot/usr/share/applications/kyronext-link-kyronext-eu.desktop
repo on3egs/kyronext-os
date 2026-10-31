@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Europe
+Comment=Ouvrir https://kyronext.eu dans le navigateur
+Exec=/usr/bin/python3 /usr/local/bin/kyronext-open-link kyronext-eu
+Icon=/usr/share/icons/Kyronext/scalable/apps/kyronext-link-kyronext-eu.svg
+Categories=Network;
+Terminal=false

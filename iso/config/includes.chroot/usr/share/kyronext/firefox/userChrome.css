@@ -1,0 +1,22 @@
+/* Personnalisation locale réversible : aucune interface de sécurité masquée. */
+@-moz-document url("chrome://browser/content/browser.xhtml") {
+  :root {
+    --toolbar-bgcolor: #151a24 !important;
+    --toolbar-color: #f1f4fa !important;
+    --lwt-accent-color: #0d1119 !important;
+    --lwt-text-color: #f1f4fa !important;
+    --lwt-selected-tab-background-color: #263043 !important;
+    --toolbar-field-background-color: #0c1119 !important;
+    --toolbar-field-color: #f1f4fa !important;
+    --toolbar-field-focus-border-color: #ef4968 !important;
+    --focus-outline-color: #ef4968 !important;
+    --tab-selected-outline-color: #ef4968 !important;
+  }
+  #navigator-toolbox { border-bottom: 1px solid #ef4968 !important; }
+  .tabbrowser-tab[selected] .tab-background {
+    border-top: 2px solid #ef4968 !important;
+    border-radius: 7px 7px 0 0 !important;
+  }
+  #urlbar-background, #searchbar { border-radius: 7px !important; }
+  /* Cadres, permissions, cadenas, avertissements et menus restent visibles. */
+}

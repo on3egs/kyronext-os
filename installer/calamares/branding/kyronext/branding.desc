@@ -1,0 +1,34 @@
+---
+componentName: kyronext
+welcomeStyleCalamares: true
+welcomeExpandingLogo: false
+windowExpanding: normal
+windowSize: 900px,620px
+windowPlacement: center
+
+strings:
+  productName: Kyronext OS
+  shortProductName: Kyronext
+  version: 0.2
+  shortVersion: 0.2
+  versionedName: Kyronext OS 0.2
+  shortVersionedName: Kyronext 0.2
+  bootloaderEntryName: Kyronext OS
+  productUrl: https://kyronext.eu/kyronext-os/
+
+sidebar: widget
+navigation: widget
+
+images:
+  productLogo: kyronext-logo.svg
+  productIcon: kyronext-logo.svg
+  productWelcome: desktop.png
+
+slideshow: show.qml
+slideshowAPI: 2
+
+style:
+  SidebarBackground: "#141922"
+  SidebarText: "#e7ecf4"
+  SidebarTextCurrent: "#ffffff"
+  SidebarBackgroundCurrent: "#ef3d59"

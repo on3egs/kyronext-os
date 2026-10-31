@@ -1,0 +1,10 @@
+Package: kyronext-installer-launcher
+Version: 0.2.0
+Architecture: all
+Depends: sudo, calamares
+Section: admin
+Priority: optional
+Maintainer: Kyronext Systems <on3egs@users.noreply.github.com>
+Description: Live-only Kyronext installer launcher
+ Provides a narrowly scoped launcher for Calamares in the Kyronext Live
+ session. The package is removed from the installed system.

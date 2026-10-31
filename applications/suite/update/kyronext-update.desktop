@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Update
+Comment=Consulter les mises à jour APT sans les installer
+Exec=kyronext-update
+Icon=kyronext-update
+Terminal=false
+Categories=System;Settings;

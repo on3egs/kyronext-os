@@ -1,0 +1,11 @@
+add_executable(test-kyronext-theme ui_theme_test.cpp)
+target_link_libraries(test-kyronext-theme PRIVATE KyronextUi Qt6::Test)
+add_test(NAME kyronext-theme COMMAND test-kyronext-theme)
+set_tests_properties(kyronext-theme PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+if(TARGET KyronextPaintDocument)
+  add_executable(test-paint-document paint_document_test.cpp)
+  target_link_libraries(test-paint-document PRIVATE KyronextPaintDocument Qt6::Test)
+  add_test(NAME paint-document COMMAND test-paint-document)
+  set_tests_properties(paint-document PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()

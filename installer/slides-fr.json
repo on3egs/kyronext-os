@@ -1,0 +1,10 @@
+{
+  "locale": "fr",
+  "slides": [
+    {"title": "Une nouvelle aventure commence", "body": "Merci de découvrir Kyronext OS. Pendant l’installation, quelques images et histoires vous feront visiter le projet.", "image": "desktop"},
+    {"title": "Voici AMP", "body": "AMP est le lecteur audio de Kyronext. Cette capture montre son interface réelle dans la version de développement.", "image": "applications"},
+    {"title": "Un espace à vous", "body": "Kyronext s’appuie sur Debian et KDE Plasma. Le bureau, les raccourcis et les outils évoluent au fil du projet.", "image": "desktop"},
+    {"title": "Un rêve, du CPC à Kyronext", "body": "Je code depuis mes 7 ans : j’ai appris le BASIC sur mon CPC 464, puis continué sur un IBM 8081. Fan de K 2000, j’ai porté ce projet seul pendant longtemps, en y consacrant beaucoup de temps et d’argent. Derrière chaque version, il y a des heures d’essais, de corrections et l’envie de partager un rêve. Merci de m’accompagner dans cette aventure. — Manix", "image": "story"},
+    {"title": "Merci d’être là", "body": "Kyronext OS est gratuit. Si vous souhaitez soutenir la suite du projet, une contribution restera entièrement facultative. Le lien sera ajouté lorsqu’il sera prêt. Merci pour votre compréhension. — Manix", "image": "thanks"}
+  ]
+}

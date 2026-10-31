@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Gallery
+Comment=Visionneuse locale Kyronext Systems — By Manix
+Exec=kyronext-gallery %f
+Icon=kyronext-gallery
+Categories=Graphics;Viewer;
+MimeType=image/png;image/jpeg;image/bmp;
+Terminal=false

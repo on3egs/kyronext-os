@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Installer Kyronext OS
+Name[fr]=Installer Kyronext OS
+Comment=Installer Kyronext OS sur cet ordinateur
+Comment[fr]=Installer Kyronext OS sur cet ordinateur
+Exec=/usr/local/bin/kyronext-installer
+Icon=kyronext-logo
+Terminal=false
+StartupNotify=true
+Categories=System;

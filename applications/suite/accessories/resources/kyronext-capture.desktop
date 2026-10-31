@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Capture
+Comment=Capture explicite sous X11 — Kyronext Systems — By Manix
+Exec=kyronext-capture
+Icon=kyronext-capture
+Categories=Graphics;Utility;
+Terminal=false

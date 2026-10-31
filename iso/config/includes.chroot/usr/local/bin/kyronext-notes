@@ -1,0 +1,429 @@
+#!/usr/bin/python3
+"""Bloc-notes Kyronext : fichiers UTF-8 locaux et enregistrement atomique."""
+import argparse
+import hashlib
+import json
+import importlib.util
+import os
+from pathlib import Path
+import stat
+import sys
+import tempfile
+import uuid
+
+
+def fingerprint(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def file_signature(path):
+    try:
+        info = Path(path).stat()
+        return info.st_mtime_ns, info.st_size, info.st_ino
+    except OSError:
+        return None
+
+
+def save_text(path, text):
+    """Écrit à côté du fichier puis le remplace ; ne tronque pas l'original."""
+    path = Path(path).resolve()
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.' + path.name + '.', suffix='.tmp', delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(text.encode('utf-8'))
+            stream.flush()
+            os.fsync(stream.fileno())
+        if path.exists():
+            os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def main(argv=None):
+    module_path = Path(__file__).resolve().parents[2] / 'lib/kyronext/kyronext_ui.py'
+    spec = importlib.util.spec_from_file_location('kyronext_ui', module_path)
+    ui = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ui)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--version', action='version', version='%(prog)s ' + ui.APP_VERSION)
+    parser.add_argument('file', nargs='?', help='Fichier texte UTF-8 à ouvrir')
+    parser.add_argument('--theme', choices=('red', 'amber'), help='Couleur initiale')
+    args = parser.parse_args(argv)
+    from PyQt6.QtCore import QSettings, QStandardPaths, Qt, QTimer
+    from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPainter, QTextCursor
+    from PyQt6.QtWidgets import QApplication, QFileDialog, QFontDialog, QInputDialog, QMainWindow, QMessageBox, QPlainTextEdit, QTabWidget, QWidget
+
+    class LineArea(QWidget):
+        def __init__(self, editor):
+            super().__init__(editor); self.editor = editor
+        def paintEvent(self, event):
+            self.editor.paint_numbers(event)
+
+    class Editor(QPlainTextEdit):
+        def __init__(self):
+            super().__init__()
+            self.note_path = None; self.disk_hash = None; self.disk_stat = None; self.external_changed = False
+            self.recovery_id = uuid.uuid4().hex
+            self.numbers = LineArea(self)
+            self.blockCountChanged.connect(self.update_margin)
+            self.updateRequest.connect(self.update_numbers)
+            self.update_margin()
+        def number_width(self):
+            return 16 + self.fontMetrics().horizontalAdvance('9') * len(str(max(1, self.blockCount())))
+        def update_margin(self, unused=None):
+            self.setViewportMargins(self.number_width(), 0, 0, 0)
+            rect = self.contentsRect()
+            self.numbers.setGeometry(rect.left(), rect.top(), self.number_width(), rect.height())
+        def update_numbers(self, rect, dy):
+            if dy: self.numbers.scroll(0, dy)
+            else: self.numbers.update(0, rect.y(), self.numbers.width(), rect.height())
+            if rect.contains(self.viewport().rect()): self.update_margin()
+        def resizeEvent(self, event):
+            super().resizeEvent(event)
+            rect = self.contentsRect()
+            self.numbers.setGeometry(rect.left(), rect.top(), self.number_width(), rect.height())
+        def paint_numbers(self, event):
+            painter = QPainter(self.numbers); painter.fillRect(event.rect(), QColor('#151a23'))
+            painter.setPen(QColor('#919bad')); painter.setFont(self.font())
+            block = self.firstVisibleBlock(); number = block.blockNumber()
+            top = round(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
+            while block.isValid() and top <= event.rect().bottom():
+                height = round(self.blockBoundingRect(block).height())
+                if block.isVisible() and top + height >= event.rect().top():
+                    painter.drawText(0, top, self.numbers.width() - 7, self.fontMetrics().height(), Qt.AlignmentFlag.AlignRight, str(number + 1))
+                top += height; number += 1; block = block.next()
+
+    class Notes(QMainWindow):
+        def __init__(self):
+            super().__init__()
+            self.settings = QSettings('Kyronext', 'Notes')
+            default_theme = QSettings('Kyronext Systems', 'Appearance').value('appearance/palette', 'red')
+            self.theme = args.theme or self.settings.value('theme', default_theme)
+            self.find_text = ''
+            self.resize(900, 650)
+            self.setMinimumSize(360, 300)
+            self.setWindowIcon(QIcon.fromTheme('kyronext-notes', QIcon('/usr/share/icons/Kyronext/scalable/apps/kyronext-notes.svg')))
+            self.tabs = QTabWidget()
+            self.tabs.setTabsClosable(True); self.tabs.setMovable(True)
+            self.tabs.tabCloseRequested.connect(self.close_tab)
+            self.tabs.currentChanged.connect(self.changed_tab)
+            self.setCentralWidget(self.tabs)
+            self.new_tab()
+            file_menu = self.menuBar().addMenu('&Fichier')
+            self.action(file_menu, '&Nouveau', QKeySequence.StandardKey.New, self.new)
+            self.action(file_menu, '&Ouvrir…', QKeySequence.StandardKey.Open, self.open_dialog)
+            self.action(file_menu, '&Enregistrer', QKeySequence.StandardKey.Save, self.save)
+            self.action(file_menu, 'Enregistrer &sous…', QKeySequence.StandardKey.SaveAs, self.save_as)
+            file_menu.addSeparator()
+            self.action(file_menu, '&Quitter', QKeySequence.StandardKey.Quit, self.close)
+            edit = self.menuBar().addMenu('&Édition')
+            for name, shortcut, slot in (('Annuler', QKeySequence.StandardKey.Undo, lambda: self.editor.undo()), ('Rétablir', QKeySequence.StandardKey.Redo, lambda: self.editor.redo()), ('Couper', QKeySequence.StandardKey.Cut, lambda: self.editor.cut()), ('Copier', QKeySequence.StandardKey.Copy, lambda: self.editor.copy()), ('Coller', QKeySequence.StandardKey.Paste, lambda: self.editor.paste()), ('Tout sélectionner', QKeySequence.StandardKey.SelectAll, lambda: self.editor.selectAll()), ('Rechercher…', QKeySequence.StandardKey.Find, self.find)):
+                self.action(edit, name, shortcut, slot)
+            self.action(edit, 'Occurrence suivante', QKeySequence.StandardKey.FindNext, self.find_next)
+            self.action(edit, 'Remplacer…', 'Ctrl+H', self.replace)
+            self.action(file_menu, 'Fermer cet onglet', 'Ctrl+W', lambda: self.close_tab(self.tabs.currentIndex()))
+            view = self.menuBar().addMenu('&Affichage')
+            wrap = QAction('Retour à la ligne automatique', self, checkable=True, checked=True)
+            wrap.toggled.connect(lambda enabled: self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth if enabled else QPlainTextEdit.LineWrapMode.NoWrap))
+            view.addAction(wrap)
+            self.action(view, 'Police…', None, self.font_dialog)
+            self.action(view, 'Palette rouge / ambre', None, self.switch_theme)
+            self.recovery_action = QAction('Récupération locale des brouillons (facultative)', self, checkable=True)
+            self.recovery_action.setChecked(self.settings.value('recovery/enabled', False, type=bool))
+            self.recovery_action.toggled.connect(self.set_recovery)
+            view.addAction(self.recovery_action)
+            self.about_action = ui.add_help_menu(self, 'notes')
+            toolbar = self.addToolBar('Documents')
+            toolbar.setMovable(False)
+            for label, slot in (('+ Nouveau', self.new), ('Ouvrir', self.open_dialog), ('Enregistrer', self.save), ('Rechercher', self.find), ('Remplacer', self.replace)):
+                toolbar.addAction(label).triggered.connect(lambda checked=False, slot=slot: slot())
+            self.recovery_timer = QTimer(self); self.recovery_timer.setInterval(30000)
+            self.recovery_timer.timeout.connect(self.save_recovery)
+            if self.recovery_action.isChecked(): self.recovery_timer.start()
+            self.action(file_menu, 'Récupérer des brouillons…', None, self.restore_recovery)
+            self.disk_timer = QTimer(self); self.disk_timer.setInterval(2500)
+            self.disk_timer.timeout.connect(self.check_external_changes); self.disk_timer.start()
+            self.apply_theme()
+            self.update_title()
+            self.update_status()
+            if args.file:
+                self.load(Path(args.file))
+
+        @property
+        def editor(self): return self.tabs.currentWidget()
+        @property
+        def path(self): return self.editor.note_path
+        @path.setter
+        def path(self, value): self.editor.note_path = value
+        @property
+        def disk_hash(self): return self.editor.disk_hash
+        @disk_hash.setter
+        def disk_hash(self, value): self.editor.disk_hash = value
+
+        def new_tab(self):
+            if self.tabs.count() >= 32:
+                QMessageBox.information(self, 'Onglets', 'Fermez un onglet : limite de 32 documents.')
+                return None
+            editor = Editor()
+            editor.setAccessibleName('Texte du bloc-notes')
+            editor.setPlaceholderText('Vos idées, vos notes, vos projets…')
+            editor.setFont(QFont('DejaVu Sans Mono', 11))
+            saved_font = QFont()
+            if saved_font.fromString(str(self.settings.value('font', ''))): editor.setFont(saved_font)
+            editor.update_margin()
+            self.tabs.addTab(editor, 'Sans titre')
+            self.tabs.setCurrentWidget(editor)
+            editor.document().modificationChanged.connect(self.update_title)
+            editor.cursorPositionChanged.connect(self.update_status)
+            editor.textChanged.connect(self.update_status)
+            return editor
+
+        def changed_tab(self, unused=None):
+            if self.editor is not None:
+                self.update_title(); self.update_status()
+
+        def close_tab(self, index):
+            previous = self.tabs.currentIndex(); self.tabs.setCurrentIndex(index)
+            if not self.confirm_leave():
+                self.tabs.setCurrentIndex(previous); return False
+            self.clear_recovery(self.editor)
+            editor = self.editor; self.tabs.removeTab(index); editor.deleteLater()
+            if not self.tabs.count(): self.new_tab()
+            return True
+
+        def action(self, menu, name, shortcut, slot):
+            action = QAction(name, self)
+            if shortcut is not None:
+                action.setShortcut(shortcut)
+            action.triggered.connect(lambda checked=False: slot())
+            menu.addAction(action)
+            return action
+
+        def update_title(self, unused=None):
+            if self.editor is None: return
+            name = self.path.name if self.path else 'Sans titre'
+            self.setWindowTitle(f'{name}[*] — Bloc-notes Kyronext')
+            self.setWindowModified(self.editor.document().isModified())
+            for index in range(self.tabs.count()):
+                editor = self.tabs.widget(index)
+                label = editor.note_path.name if editor.note_path else 'Sans titre'
+                self.tabs.setTabText(index, label + (' •' if editor.document().isModified() else ''))
+
+        def update_status(self):
+            cursor = self.editor.textCursor()
+            self.statusBar().showMessage(f'UTF-8 · Ligne {cursor.blockNumber()+1}, colonne {cursor.positionInBlock()+1} · {self.editor.document().characterCount()-1} caractères')
+
+        def confirm_leave(self):
+            if not self.editor.document().isModified():
+                return True
+            answer = QMessageBox.warning(self, 'Modifications non enregistrées', 'Enregistrer les modifications avant de continuer ?', QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
+            if answer == QMessageBox.StandardButton.Save:
+                return self.save()
+            return answer == QMessageBox.StandardButton.Discard
+
+        def new(self):
+            self.new_tab()
+
+        def open_dialog(self):
+            filename, _ = QFileDialog.getOpenFileName(self, 'Ouvrir un texte UTF-8', str(self.path.parent) if self.path else '', 'Textes (*.txt *.md *.log);;Tous les fichiers (*)')
+            if filename:
+                self.load(Path(filename))
+
+        def load(self, path):
+            try:
+                path = path.resolve()
+                with path.open('rb') as stream:
+                    data = stream.read(16 * 1024 * 1024 + 1)
+                if len(data) > 16 * 1024 * 1024:
+                    raise ValueError('Ce bloc-notes est limité aux fichiers de 16 Mio.')
+                text = data.decode('utf-8-sig')
+            except (OSError, UnicodeError, ValueError) as error:
+                QMessageBox.critical(self, 'Ouverture impossible', str(error))
+                return False
+            for index in range(self.tabs.count()):
+                if self.tabs.widget(index).note_path == path:
+                    self.tabs.setCurrentIndex(index); return True
+            if self.path is not None or self.editor.document().isModified() or self.editor.toPlainText():
+                if self.new_tab() is None: return False
+            self.path, self.disk_hash = path, hashlib.sha256(data).hexdigest()
+            self.editor.disk_stat = file_signature(path); self.editor.external_changed = False
+            self.editor.setPlainText(text)
+            self.editor.document().setModified(False)
+            self.update_title()
+            return True
+
+        def save(self):
+            if self.path is None:
+                return self.save_as()
+            try:
+                current = fingerprint(self.path) if self.path.exists() else None
+                if current != self.disk_hash:
+                    answer = QMessageBox.warning(self, 'Fichier modifié sur disque', 'Ce fichier a changé ou a été supprimé depuis son ouverture. Remplacer la version sur disque ?', QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
+                    if answer != QMessageBox.StandardButton.Save:
+                        return False
+                return self.write(self.path)
+            except OSError as error:
+                QMessageBox.critical(self, 'Enregistrement impossible', str(error))
+                return False
+
+        def save_as(self):
+            filename, _ = QFileDialog.getSaveFileName(self, 'Enregistrer le texte UTF-8', str(self.path) if self.path else 'Sans titre.txt', 'Texte (*.txt);;Markdown (*.md);;Tous les fichiers (*)')
+            return self.write(Path(filename)) if filename else False
+
+        def write(self, path):
+            try:
+                text = self.editor.toPlainText()
+                save_text(path, text)
+                self.path = path.resolve()
+                self.disk_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
+                self.editor.disk_stat = file_signature(self.path); self.editor.external_changed = False
+                self.editor.document().setModified(False)
+                self.clear_recovery(self.editor)
+                self.update_title()
+                self.statusBar().showMessage('Enregistrement terminé — UTF-8', 4000)
+                return True
+            except (OSError, UnicodeError) as error:
+                QMessageBox.critical(self, 'Enregistrement impossible', str(error))
+                return False
+
+        def find(self):
+            text, accepted = QInputDialog.getText(self, 'Rechercher', 'Texte à rechercher :', text=self.find_text)
+            if accepted and text:
+                self.find_text = text
+                self.find_next()
+
+        def find_next(self):
+            if not self.find_text:
+                self.find()
+                return
+            if self.editor.find(self.find_text):
+                return
+            original = self.editor.textCursor()
+            self.editor.moveCursor(QTextCursor.MoveOperation.Start)
+            if not self.editor.find(self.find_text):
+                self.editor.setTextCursor(original)
+                self.statusBar().showMessage('Texte introuvable.', 4000)
+
+        def replace(self):
+            needle, accepted = QInputDialog.getText(self, 'Remplacer', 'Texte à rechercher :', text=self.find_text)
+            if not accepted or not needle: return
+            replacement, accepted = QInputDialog.getText(self, 'Remplacer', 'Remplacer par :')
+            if not accepted: return
+            original = self.editor.toPlainText(); count = original.count(needle)
+            if not count:
+                self.statusBar().showMessage('Texte introuvable.', 4000); return
+            if QMessageBox.question(self, 'Remplacer tout', f'Remplacer les {count} occurrences dans cet onglet ?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes: return
+            cursor = self.editor.textCursor(); cursor.beginEditBlock()
+            cursor.select(QTextCursor.SelectionType.Document); cursor.insertText(original.replace(needle, replacement))
+            cursor.endEditBlock(); self.find_text = needle
+            self.statusBar().showMessage(f'{count} occurrences remplacées.', 4000)
+
+        def check_external_changes(self):
+            for index in range(self.tabs.count()):
+                editor = self.tabs.widget(index)
+                if editor.note_path and not editor.external_changed and file_signature(editor.note_path) != editor.disk_stat:
+                    editor.external_changed = True
+                    self.tabs.setTabToolTip(index, 'Le fichier a changé ou a été supprimé sur disque. Votre texte est conservé ; la sauvegarde demandera confirmation.')
+                    self.statusBar().showMessage('Changement sur disque : ' + editor.note_path.name + ' — texte conservé.', 10000)
+
+        def recovery_directory(self):
+            return Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation)) / 'recovery'
+
+        def clear_recovery(self, editor):
+            try:
+                (self.recovery_directory() / (editor.recovery_id + '.json')).unlink(missing_ok=True)
+            except OSError:
+                self.statusBar().showMessage('Un ancien brouillon de récupération n’a pas pu être supprimé.', 5000)
+
+        def set_recovery(self, enabled):
+            self.settings.setValue('recovery/enabled', enabled)
+            if enabled:
+                self.recovery_timer.start(); self.save_recovery()
+            else:
+                self.recovery_timer.stop()
+                for index in range(self.tabs.count()): self.clear_recovery(self.tabs.widget(index))
+
+        def save_recovery(self):
+            if not self.recovery_action.isChecked(): return
+            try:
+                directory = self.recovery_directory(); directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+                for index in range(self.tabs.count()):
+                    editor = self.tabs.widget(index)
+                    if editor.document().isModified() and len(editor.toPlainText().encode('utf-8')) <= 16 * 1024 * 1024:
+                        payload = {'text': editor.toPlainText(), 'name': str(editor.note_path or ''), 'id': editor.recovery_id}
+                        save_text(directory / (editor.recovery_id + '.json'), json.dumps(payload, ensure_ascii=False))
+            except (OSError, UnicodeError) as error:
+                self.statusBar().showMessage('Récupération locale impossible : ' + str(error), 6000)
+
+        def restore_recovery(self):
+            if not self.recovery_action.isChecked():
+                QMessageBox.information(self, 'Récupération', 'Activez la récupération locale dans Affichage. Les brouillons restent sur cet ordinateur.')
+                return
+            directory = self.recovery_directory()
+            files = sorted(directory.glob('*.json'))[:32]
+            if not files:
+                QMessageBox.information(self, 'Récupération', 'Aucun brouillon disponible.'); return
+            for path in files:
+                try:
+                    if path.stat().st_size > 32 * 1024 * 1024: continue
+                    payload = json.loads(path.read_text(encoding='utf-8'))
+                    if not isinstance(payload.get('text'), str): continue
+                    if any(self.tabs.widget(i).recovery_id == path.stem for i in range(self.tabs.count())): continue
+                    editor = self.new_tab()
+                    if editor is None: break
+                    editor.recovery_id = path.stem
+                    editor.setPlainText(payload['text']); editor.document().setModified(True)
+                    self.update_title()
+                except (OSError, ValueError, AttributeError):
+                    self.statusBar().showMessage('Un brouillon illisible a été ignoré.', 5000)
+
+        def font_dialog(self):
+            font, accepted = QFontDialog.getFont(self.editor.font(), self, 'Police du texte')
+            if accepted:
+                self.editor.setFont(font)
+                self.editor.update_margin()
+                self.settings.setValue('font', font.toString())
+
+        def switch_theme(self):
+            self.theme = 'amber' if self.theme == 'red' else 'red'
+            self.apply_theme()
+
+        def apply_theme(self):
+            accent = '#e9ad52' if self.theme == 'amber' else '#ef4968'
+            self.settings.setValue('theme', self.theme)
+            self.setStyleSheet(f'''QWidget {{ background:#111318; color:#f1f2f5; }}
+                QPlainTextEdit {{ background:#0c0e12; color:#f1f2f5; border:1px solid #454b58; padding:12px; selection-background-color:{accent}; selection-color:#111318; }}
+                QMenuBar,QStatusBar {{ background:#1c2028; padding:5px; }}
+                QMenuBar::item:selected,QMenu::item:selected {{ background:{accent}; color:#111318; }}
+                QMenu {{ background:#20242d; border:1px solid #454b58; }}
+                QToolBar {{ background:#151923; border:0; padding:7px; spacing:7px; }}
+                QToolButton {{ background:#202735; border:1px solid #394354; border-radius:6px; padding:8px 12px; }}
+                QToolButton:hover {{ border-color:{accent}; color:{accent}; }}
+                QTabWidget::pane {{ border:0; }}
+                QTabBar::tab {{ background:#181d27; color:#acb6c6; padding:9px 15px; border-bottom:2px solid transparent; }}
+                QTabBar::tab:selected {{ color:#f4f6fa; background:#222a37; border-bottom-color:{accent}; }}
+                QPushButton {{ background:#20242d; border:1px solid #454b58; padding:7px; border-radius:4px; }}
+                QPushButton:focus,QPushButton:hover {{ border:2px solid {accent}; }}''')
+
+        def closeEvent(self, event):
+            original = self.tabs.currentIndex()
+            for index in range(self.tabs.count()):
+                self.tabs.setCurrentIndex(index)
+                if not self.confirm_leave():
+                    self.tabs.setCurrentIndex(original); event.ignore(); return
+            for index in range(self.tabs.count()): self.clear_recovery(self.tabs.widget(index))
+            event.accept()
+
+    app = QApplication(sys.argv[:1])
+    ui.configure_application(app, 'notes')
+    window = Notes()
+    window.show()
+    return app.exec()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

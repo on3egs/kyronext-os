@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <title>Kyronext OS — fond de démarrage original</title>
+  <defs>
+    <linearGradient id="graphite" x2="1" y2="1">
+      <stop stop-color="#080b11"/>
+      <stop offset="1" stop-color="#1b1e27"/>
+    </linearGradient>
+    <linearGradient id="scanner">
+      <stop stop-color="#73182c" stop-opacity="0"/>
+      <stop offset=".42" stop-color="#b3213c"/>
+      <stop offset=".65" stop-color="#ff415c"/>
+      <stop offset="1" stop-color="#73182c" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#a5afc3" stroke-opacity=".035"/>
+    </pattern>
+  </defs>
+  <rect width="800" height="600" fill="url(#graphite)"/>
+  <rect width="800" height="600" fill="url(#grid)"/>
+  <path d="M694 0L394 600H468L768 0Z" fill="#070a10" fill-opacity=".65"/>
+  <path d="M777 0L477 600" fill="none" stroke="#9b243c" stroke-opacity=".65"/>
+  <text x="64" y="66" fill="#b7bfce" font-family="DejaVu Sans,sans-serif" font-size="11" letter-spacing="4">KYRONEXT SYSTEMS</text>
+  <text x="60" y="145" fill="#f4f5f8" font-family="DejaVu Sans,sans-serif" font-size="52" letter-spacing="1">Kyronext OS</text>
+  <text x="64" y="184" fill="#ee405a" font-family="DejaVu Sans,sans-serif" font-size="13" letter-spacing="2">0.1 / DEVELOPER PREVIEW</text>
+  <text x="64" y="216" fill="#aeb7c8" font-family="DejaVu Sans,sans-serif" font-size="12">LIVE AMD64  /  KDE PLASMA</text>
+  <path d="M653 78H667V180H653ZM680 128L723 78H743L699 128L743 180H723Z" fill="#f0f2f6"/>
+  <path d="M680 128L698 108H718L699 128L718 149H698Z" fill="#e93652"/>
+  <rect x="64" y="250" width="672" height="2" fill="url(#scanner)"/>
+  <rect x="48" y="282" width="704" height="244" rx="7" fill="#080b11" fill-opacity=".7" stroke="#363442" stroke-opacity=".6"/>
+  <rect x="48" y="308" width="3" height="80" fill="#bc2944"/>
+  <text x="64" y="581" fill="#8993a8" font-family="DejaVu Sans,sans-serif" font-size="10" letter-spacing="1">KYRONEXT SYSTEMS — BY MANIX</text>
+  <text x="735" y="581" text-anchor="end" fill="#a52c44" font-family="DejaVu Sans,sans-serif" font-size="10" letter-spacing="2">LIVE / 0.1</text>
+</svg>

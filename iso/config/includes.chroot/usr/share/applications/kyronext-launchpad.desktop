@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Launchpad
+Comment=Applications installées, favoris et liens Kyronext
+Exec=/usr/bin/python3 /usr/local/bin/kyronext-launchpad
+Icon=kyronext-logo
+Terminal=false
+Categories=Utility;System;

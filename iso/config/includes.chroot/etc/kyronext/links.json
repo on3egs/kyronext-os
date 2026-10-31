@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "links": [
+    {
+      "id": "kitt-franco-belge",
+      "label": "KITT FRANCO-BELGE",
+      "url": "https://www.kitt-franco-belge.be",
+      "description": "Le site communautaire KITT Franco-Belge.",
+      "visible": true,
+      "verification": {
+        "status": "verified",
+        "checked_at": "2026-10-30T16:48:25+00:00",
+        "detail": "Réponse HTTPS reçue avec validation standard du certificat.",
+        "observed_final_url": "https://kitt-franco-belge.be/"
+      }
+    },
+    {
+      "id": "kironext-be",
+      "label": "KYRONEXT OFFICIAL",
+      "url": "https://kironext.be",
+      "description": "L’adresse belge fournie par le créateur du projet.",
+      "visible": true,
+      "verification": {
+        "status": "to-confirm",
+        "checked_at": "2026-10-30T16:48:25+00:00",
+        "detail": "URLError: <urlopen error [Errno 11001] getaddrinfo failed>"
+      }
+    },
+    {
+      "id": "kyronext-eu",
+      "label": "KYRONEXT SHOP",
+      "url": "https://kyronext.eu",
+      "description": "Le site Kyronext Systems.",
+      "visible": true,
+      "verification": {
+        "status": "verified",
+        "checked_at": "2026-10-30T16:48:25+00:00",
+        "detail": "Réponse HTTPS reçue avec validation standard du certificat.",
+        "observed_final_url": "https://kyronext.eu"
+      }
+    }
+  ]
+}

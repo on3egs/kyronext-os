@@ -1,0 +1,492 @@
+#!/usr/bin/python3
+"""Lanceur Kyronext : applications installées et recherche locale facultative."""
+import importlib.util
+from pathlib import Path
+from queue import Empty, Queue
+import sys
+from threading import Event, Thread
+
+
+def main():
+    from PyQt6.QtCore import Qt, QSettings, QStandardPaths, QTimer, QUrl
+    from PyQt6.QtGui import QDesktopServices, QIcon
+    from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                                 QHBoxLayout, QLineEdit, QComboBox, QListWidget,
+                                 QListWidgetItem, QPushButton, QMessageBox, QGroupBox,
+                                 QFileDialog)
+
+    smoke_test = '--smoke-test' in sys.argv
+    if smoke_test:
+        sys.argv.remove('--smoke-test')
+    smoke_roots = []
+    if '--smoke-test-files' in sys.argv:
+        position = sys.argv.index('--smoke-test-files')
+        smoke_roots = sys.argv[position + 1:position + 3]
+        del sys.argv[position:position + 3]
+        if len(smoke_roots) != 2:
+            raise SystemExit('--smoke-test-files attend deux dossiers temporaires.')
+    usr = Path(__file__).resolve().parents[2]
+
+    def module(name):
+        spec = importlib.util.spec_from_file_location(
+            name, usr / ('lib/kyronext/' + name + '.py'))
+        value = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(value)
+        return value
+
+    ui = module('kyronext_ui')
+    catalog = module('desktop_catalog')
+    links = module('kyronext_links')
+    file_search = module('file_search')
+
+    app = QApplication(sys.argv)
+    ui.configure_application(app, 'launchpad')
+    window = QMainWindow()
+    window.setWindowTitle('Kyronext Launchpad')
+    window.resize(900, 680)
+    settings = QSettings()
+    favorites = set(settings.value('favorites', [], type=list))
+    recent = settings.value('recent', [], type=list)
+    body = QWidget()
+    layout = QVBoxLayout(body)
+    layout.setContentsMargins(22, 22, 22, 22)
+
+    search = QLineEdit()
+    search.setPlaceholderText('Rechercher une application installée…')
+    search.setAccessibleName('Rechercher une application')
+    scope = QComboBox()
+    scope.addItem('Applications', 'applications')
+    scope.addItem('Fichiers sélectionnés', 'files')
+    scope.setAccessibleName('Portée de la recherche')
+    query_row = QHBoxLayout()
+    query_row.addWidget(scope)
+    query_row.addWidget(search, 1)
+    layout.addLayout(query_row)
+
+    categories = QComboBox()
+    groups = [('Toutes', ''), ('Favoris', 'favorites'), ('Récentes', 'recent'),
+              ('Système', 'System'), ('Multimédia', 'AudioVideo'), ('Internet', 'Network'),
+              ('Création', 'Graphics'), ('Développement', 'Development'),
+              ('Utilitaires', 'Utility')]
+    for label, key in groups:
+        categories.addItem(label, key)
+    layout.addWidget(categories)
+
+    file_roots = []
+    for raw in settings.value('fileSearchRoots', [], type=list)[:file_search.MAX_ROOTS]:
+        try:
+            root = Path(str(raw)).expanduser()
+            if root.is_dir() and not root.is_symlink():
+                resolved = str(root.resolve(strict=True))
+                if resolved not in file_roots:
+                    file_roots.append(resolved)
+        except (OSError, RuntimeError, ValueError):
+            continue
+    if smoke_roots:
+        file_roots = []
+        for raw in smoke_roots:
+            root = Path(raw).expanduser()
+            if root.is_symlink() or not root.is_dir():
+                raise SystemExit('Le smoke test attend deux dossiers locaux ordinaires.')
+            file_roots.append(str(root.resolve(strict=True)))
+
+    file_controls = QWidget()
+    file_controls_layout = QHBoxLayout(file_controls)
+    file_controls_layout.setContentsMargins(0, 0, 0, 0)
+    roots_box = QComboBox()
+    roots_box.setAccessibleName('Dossiers choisis pour la recherche')
+    add_folder_button = QPushButton('Ajouter un dossier…')
+    remove_folder_button = QPushButton('Retirer le dossier')
+    reindex_button = QPushButton('Réindexer')
+    cancel_index_button = QPushButton('Arrêter')
+    for widget in (roots_box, add_folder_button, remove_folder_button,
+                   reindex_button, cancel_index_button):
+        file_controls_layout.addWidget(widget)
+    file_controls.setVisible(False)
+    layout.addWidget(file_controls)
+
+    listing = QListWidget()
+    listing.setAccessibleName('Résultats Kyronext Launchpad')
+    layout.addWidget(listing, 1)
+
+    buttons = QHBoxLayout()
+    open_button = QPushButton('Ouvrir')
+    favorite_button = QPushButton('Ajouter / retirer des favoris')
+    pin_button = QPushButton('Épingler au bureau')
+    refresh_button = QPushButton('Actualiser')
+    for button in (open_button, favorite_button, pin_button, refresh_button):
+        buttons.addWidget(button)
+    layout.addLayout(buttons)
+
+    network = QGroupBox('KYRONEXT NETWORK — liens sur demande')
+    network_layout = QHBoxLayout(network)
+    configured, _warnings = links.load_links()
+    for link in configured:
+        if not link.get('visible', True):
+            continue
+        button = QPushButton(link['label'])
+        button.setToolTip(link['url'])
+        button.clicked.connect(lambda checked=False, entry=link:
+                               links.open_link(window, entry))
+        network_layout.addWidget(button)
+    network.setVisible(bool(configured))
+    layout.addWidget(network)
+
+    entries = []
+    file_index = {'files': [], 'errors': 0, 'truncated': False}
+    index_status = 'Aucun dossier personnel n’est indexé.'
+    index_generation = 0
+    indexed_generation = -1
+    index_thread = None
+    index_cancel_event = None
+    index_requested = False
+    index_queue = Queue()
+
+    def selected():
+        item = listing.currentItem()
+        return item.data(Qt.ItemDataRole.UserRole) if item else None
+
+    def populate_applications():
+        listing.clear()
+        text, category = search.text().casefold(), categories.currentData()
+        visible = entries
+        if category == 'recent':
+            visible = sorted(
+                entries,
+                key=lambda entry: recent.index(entry['id']) if entry['id'] in recent else 100000)
+        for entry in visible:
+            if text and text not in (entry['name'] + ' ' + entry['comment']).casefold():
+                continue
+            if category == 'favorites' and entry['id'] not in favorites:
+                continue
+            if category == 'recent' and entry['id'] not in recent:
+                continue
+            if category not in ('', 'favorites', 'recent') and \
+                    category not in entry['categories'].split(';'):
+                continue
+            item = QListWidgetItem(
+                QIcon.fromTheme(entry['icon']),
+                ('★ ' if entry['id'] in favorites else '') + entry['name'])
+            item.setToolTip(entry['comment'])
+            item.setData(Qt.ItemDataRole.UserRole, entry)
+            listing.addItem(item)
+        window.statusBar().showMessage(
+            f'{listing.count()} application(s) installée(s) disponible(s)')
+
+    def populate_files():
+        listing.clear()
+        text = search.text().strip()
+        if not file_roots:
+            window.statusBar().showMessage(
+                'Choisissez un dossier pour activer la recherche de fichiers. Aucun dossier n’est parcouru par défaut.')
+            return
+        if not text:
+            window.statusBar().showMessage(index_status + ' Saisissez un nom de fichier.')
+            return
+        results = file_search.search_paths(file_index, text)
+        for path in results:
+            item = QListWidgetItem(QIcon.fromTheme('text-x-generic'), Path(path).name)
+            item.setToolTip(path)
+            item.setData(Qt.ItemDataRole.UserRole, {'kind': 'file', 'path': path})
+            listing.addItem(item)
+        window.statusBar().showMessage(f'{len(results)} fichier(s) trouvé(s). {index_status}')
+
+    def populate():
+        if scope.currentData() == 'files':
+            populate_files()
+        else:
+            populate_applications()
+
+    def update_roots_box():
+        selected_root = roots_box.currentData()
+        roots_box.clear()
+        for root in file_roots:
+            roots_box.addItem(root, root)
+        if selected_root in file_roots:
+            roots_box.setCurrentIndex(roots_box.findData(selected_root))
+        remove_folder_button.setEnabled(bool(file_roots))
+        reindex_button.setEnabled(bool(file_roots))
+        cancel_index_button.setEnabled(index_thread is not None and index_thread.is_alive())
+
+    def start_index_worker(generation):
+        nonlocal index_thread, index_cancel_event
+        roots_snapshot = tuple(file_roots)
+        cancel_event = Event()
+        index_cancel_event = cancel_event
+
+        def report_progress(info):
+            index_queue.put((generation, 'progress', info))
+
+        def build():
+            try:
+                result = file_search.index_paths(
+                    roots_snapshot, cancel_event=cancel_event, progress=report_progress)
+            except Exception as error:  # The UI reports a bounded, local failure.
+                result = {'files': [], 'errors': 1, 'truncated': False,
+                          'error': str(error)}
+            index_queue.put((generation, 'result', result))
+
+        index_thread = Thread(target=build, name='kyronext-file-index', daemon=True)
+        index_thread.start()
+
+    def request_index():
+        nonlocal index_generation, file_index, indexed_generation, index_status
+        nonlocal index_requested
+        index_generation += 1
+        if index_cancel_event is not None:
+            index_cancel_event.set()
+        indexed_generation = -1
+        file_index = {'files': [], 'errors': 0, 'truncated': False}
+        if not file_roots:
+            index_requested = False
+            index_status = 'Aucun dossier personnel n’est indexé.'
+            populate()
+            return
+        index_requested = True
+        index_status = 'Indexation locale en cours…'
+        populate()
+        if index_thread is None or not index_thread.is_alive():
+            start_index_worker(index_generation)
+        update_roots_box()
+
+    def cancel_index():
+        nonlocal index_generation, indexed_generation, index_requested
+        nonlocal file_index, index_status
+        index_generation += 1
+        index_requested = False
+        indexed_generation = index_generation
+        if index_cancel_event is not None:
+            index_cancel_event.set()
+        file_index = {'files': [], 'errors': 0, 'truncated': False}
+        index_status = 'Indexation arrêtée à votre demande.'
+        populate()
+        update_roots_box()
+
+    def poll_index():
+        nonlocal index_thread, index_cancel_event, file_index
+        nonlocal indexed_generation, index_status, index_requested
+        roots_changed = False
+        results_changed = False
+        while True:
+            try:
+                generation, kind, payload = index_queue.get_nowait()
+            except Empty:
+                break
+            if generation == index_generation and kind == 'progress':
+                index_status = (f"Indexation locale : {payload['files']} fichier(s), "
+                                f"{payload['directories']} dossier(s) parcouru(s)")
+                results_changed = True
+            elif generation == index_generation and kind == 'result':
+                result = payload
+                file_index = result
+                indexed_generation = generation
+                index_requested = False
+                results_changed = True
+                if result.get('error'):
+                    index_status = 'Erreur pendant la lecture des dossiers sélectionnés.'
+                else:
+                    count = len(result['files'])
+                    index_status = f'{count} nom(s) indexé(s) en mémoire'
+                    if result['errors']:
+                        index_status += f", {result['errors']} chemin(s) inaccessible(s)"
+                    limits = []
+                    if result.get('truncated'):
+                        limits.append('limite de fichiers atteinte')
+                    if result.get('directory_limited'):
+                        limits.append('limite de dossiers atteinte')
+                    if result.get('depth_limited'):
+                        limits.append('profondeur maximale atteinte')
+                    if result.get('timed_out'):
+                        limits.append('durée maximale atteinte')
+                    if result.get('cancelled'):
+                        limits.append('arrêtée')
+                    if result.get('mounts_skipped'):
+                        limits.append(f"{result['mounts_skipped']} autre(s) volume(s) ignoré(s)")
+                    if limits:
+                        index_status += ' ; ' + ', '.join(limits)
+        if index_thread is not None and not index_thread.is_alive():
+            index_thread = None
+            index_cancel_event = None
+            roots_changed = True
+        if index_requested and file_roots and index_thread is None:
+            start_index_worker(index_generation)
+            roots_changed = True
+        if results_changed and scope.currentData() == 'files':
+            populate_files()
+        if roots_changed:
+            update_roots_box()
+
+    def reload_applications():
+        nonlocal entries
+        entries = catalog.scan_applications()
+        populate()
+
+    def refresh():
+        if scope.currentData() == 'files':
+            request_index()
+        else:
+            reload_applications()
+
+    def launch():
+        entry = selected()
+        if not entry:
+            return
+        try:
+            if entry.get('kind') == 'file':
+                opened = QDesktopServices.openUrl(QUrl.fromLocalFile(entry['path']))
+                if not opened:
+                    raise RuntimeError('Aucune application ne peut ouvrir ce fichier.')
+                return
+            catalog.launch_application(entry['path'])
+            recent[:] = ([entry['id']] +
+                         [value for value in recent if value != entry['id']])[:20]
+            settings.setValue('recent', recent)
+        except Exception as error:
+            QMessageBox.warning(window, 'Ouverture impossible', str(error))
+
+    def favorite():
+        entry = selected()
+        if entry and entry.get('kind') != 'file':
+            favorites.symmetric_difference_update([entry['id']])
+            settings.setValue('favorites', sorted(favorites))
+            populate()
+
+    def pin():
+        entry = selected()
+        if entry and entry.get('kind') != 'file':
+            try:
+                directory = QStandardPaths.writableLocation(
+                    QStandardPaths.StandardLocation.DesktopLocation)
+                if not directory:
+                    raise ValueError('Aucun dossier Bureau configuré.')
+                catalog.pin_application(entry['path'], directory)
+                window.statusBar().showMessage('Raccourci créé sur le bureau.')
+            except Exception as error:
+                QMessageBox.warning(window, 'Raccourci non créé', str(error))
+
+    def add_folder():
+        chosen = QFileDialog.getExistingDirectory(
+            window, 'Choisir un dossier à indexer', str(Path.home()))
+        if not chosen:
+            return
+        path = Path(chosen)
+        if path.is_symlink() or not path.is_dir():
+            QMessageBox.warning(window, 'Dossier refusé',
+                                'Choisissez un dossier local accessible, pas un lien symbolique.')
+            return
+        try:
+            normalized = str(path.resolve(strict=True))
+        except (OSError, RuntimeError) as error:
+            QMessageBox.warning(window, 'Dossier indisponible', str(error))
+            return
+        if normalized in file_roots:
+            window.statusBar().showMessage('Ce dossier est déjà sélectionné.')
+            return
+        if len(file_roots) >= file_search.MAX_ROOTS:
+            QMessageBox.warning(window, 'Limite atteinte',
+                                f'La recherche est limitée à {file_search.MAX_ROOTS} dossiers.')
+            return
+        file_roots.append(normalized)
+        settings.setValue('fileSearchRoots', file_roots)
+        update_roots_box()
+        request_index()
+
+    def remove_folder():
+        selected_root = roots_box.currentData()
+        if selected_root in file_roots:
+            file_roots.remove(selected_root)
+            settings.setValue('fileSearchRoots', file_roots)
+            update_roots_box()
+            request_index()
+
+    def update_scope():
+        if scope.currentData() == 'files' and file_roots and indexed_generation != index_generation:
+            if index_thread is None or not index_thread.is_alive():
+                request_index()
+        files_mode = scope.currentData() == 'files'
+        search.setPlaceholderText(
+            'Rechercher un nom de fichier dans les dossiers choisis…' if files_mode
+            else 'Rechercher une application installée…')
+        search.setAccessibleName('Rechercher un fichier local' if files_mode
+                                  else 'Rechercher une application')
+        categories.setVisible(not files_mode)
+        file_controls.setVisible(files_mode)
+        favorite_button.setEnabled(not files_mode)
+        pin_button.setEnabled(not files_mode)
+        populate()
+
+    search.textChanged.connect(populate)
+    scope.currentIndexChanged.connect(update_scope)
+    categories.currentIndexChanged.connect(populate)
+    listing.itemActivated.connect(lambda _item: launch())
+    open_button.clicked.connect(launch)
+    favorite_button.clicked.connect(favorite)
+    pin_button.clicked.connect(pin)
+    refresh_button.clicked.connect(refresh)
+    add_folder_button.clicked.connect(add_folder)
+    remove_folder_button.clicked.connect(remove_folder)
+    reindex_button.clicked.connect(request_index)
+    cancel_index_button.clicked.connect(cancel_index)
+    update_roots_box()
+
+    window.setCentralWidget(body)
+    window.setStyleSheet(
+        'QMainWindow,QWidget{background:#11151c;color:#eef0f5;}'
+        'QLineEdit,QListWidget,QComboBox{background:#0a0e14;border:1px solid #394252;'
+        'border-radius:6px;padding:8px;}'
+        'QPushButton{background:#222936;border:1px solid #424b5c;border-radius:6px;padding:9px;}'
+        'QPushButton:hover{border-color:#ef3c60;} QListWidget::item{padding:9px;}'
+        'QListWidget::item:selected{background:#72243c;}')
+    ui.add_help_menu(window, 'launchpad')
+    reload_applications()
+    poller = QTimer(window)
+    poller.timeout.connect(poll_index)
+    poller.start(200)
+    window.show()
+    if smoke_roots:
+        def fail_search_smoke(reason):
+            state = (f' (scope={scope.currentData()!r}, requested={index_requested!r}, '
+                     f'worker_alive={index_thread is not None and index_thread.is_alive()!r}, '
+                     f'generation={index_generation}, indexed={indexed_generation}, '
+                     f'files={len(file_index.get("files", ()))})')
+            sys.stderr.write('Launchpad file-search UI failed: ' + reason + state + '\n')
+            app.exit(1)
+
+        def verify_search_results():
+            if index_requested or (index_thread is not None and index_thread.is_alive()):
+                QTimer.singleShot(50, verify_search_results)
+                return
+            search.setText('kyronext-ui-check')
+            if listing.count() != 1:
+                fail_search_smoke('the selected local file was not found')
+                return
+            roots_box.setCurrentIndex(1)
+            listing.setCurrentRow(0)
+            expected_path = str(Path(smoke_roots[0]) / 'kyronext-ui-check.txt')
+
+            def verify_selection_survives_refresh():
+                entry = selected()
+                if roots_box.currentData() != file_roots[1]:
+                    fail_search_smoke('selected folder changed during polling')
+                    return
+                if not entry or entry.get('path') != expected_path:
+                    fail_search_smoke('selected result was cleared during polling')
+                    return
+                print('Launchpad file-search UI OK (selected roots and result survive polling).')
+                app.exit(0)
+
+            QTimer.singleShot(450, verify_selection_survives_refresh)
+
+        def start_search_smoke():
+            scope.setCurrentIndex(scope.findData('files'))
+            QTimer.singleShot(50, verify_search_results)
+
+        QTimer.singleShot(0, start_search_smoke)
+        QTimer.singleShot(7000, lambda: fail_search_smoke('timed out'))
+    if smoke_test:
+        QTimer.singleShot(500, app.quit)
+    return app.exec()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

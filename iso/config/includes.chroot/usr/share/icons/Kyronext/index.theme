@@ -1,0 +1,35 @@
+[Icon Theme]
+Name=Kyronext
+Comment=Icônes originales Kyronext Systems — By Manix ; héritage Breeze pour le reste du bureau.
+Inherits=breeze-dark,breeze,hicolor
+FollowsColorScheme=true
+Directories=scalable/apps,scalable/places,scalable/actions,scalable/applets
+Example=kyronext-logo
+
+[scalable/apps]
+Size=64
+Type=Scalable
+MinSize=16
+MaxSize=256
+Context=Applications
+
+[scalable/places]
+Size=64
+Type=Scalable
+MinSize=16
+MaxSize=256
+Context=Places
+
+[scalable/actions]
+Size=64
+Type=Scalable
+MinSize=16
+MaxSize=256
+Context=Actions
+
+[scalable/applets]
+Size=64
+Type=Scalable
+MinSize=16
+MaxSize=256
+Context=Applets

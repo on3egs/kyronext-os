@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Firefox — thème Kyronext
+Comment=Firefox ESR officiel, profil Kyronext indépendant et réversible
+Exec=/usr/bin/python3 /usr/local/bin/kyronext-firefox %U
+Icon=kyronext-firefox
+Categories=Network;WebBrowser;
+Terminal=false
+Actions=Plain;
+
+[Desktop Action Plain]
+Name=Firefox normal
+Exec=/usr/bin/python3 /usr/local/bin/kyronext-firefox --plain %U

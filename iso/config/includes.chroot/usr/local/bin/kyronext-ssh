@@ -1,0 +1,32 @@
+#!/bin/bash
+# Ne reçoit que des clés PUBLIQUES ; aucune connexion sortante automatique.
+set -euo pipefail
+case "${1:-status}" in
+    status)
+        systemctl --no-pager status ssh.service || true
+        ip -brief address
+        ;;
+    authorize)
+        [[ $EUID == 0 ]] || { echo 'Utiliser sudo kyronext-ssh authorize fichier.pub'; exit 1; }
+        input=${2:?Chemin vers la clé publique requis}
+        [[ -f "$input" && $(stat -c %s "$input") -le 16384 ]] || { echo 'Clé invalide'; exit 1; }
+        # Une seule clé, sans options authorized_keys ni contenu privé.
+        [[ $(grep -cve '^[[:space:]]*$' "$input") == 1 ]] || { echo 'Une seule clé publique requise'; exit 1; }
+        read -r kind value comment < "$input"
+        case "$kind" in ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com) ;; *) echo 'Type de clé publique non reconnu'; exit 1;; esac
+        ssh-keygen -l -f "$input" >/dev/null
+        install -d -m 0755 /etc/kyronext/ssh
+        target=/etc/kyronext/ssh/authorized_keys
+        # sshd lit les clés publiques avec l'identité de l'utilisateur cible.
+        touch "$target"; chmod 0644 "$target"; chown root:root "$target"
+        entry="$kind $value"
+        grep -qxF "$entry" "$target" || printf '%s\n' "$entry" >> "$target"
+        systemctl restart ssh.service
+        echo 'Clé autorisée. Connexion : ssh kyronext@ADRESSE_IP'
+        ;;
+    stop)
+        [[ $EUID == 0 ]] || { echo 'Utiliser sudo kyronext-ssh stop'; exit 1; }
+        systemctl stop ssh.socket ssh.service
+        ;;
+    *) echo 'Usage : kyronext-ssh status | sudo kyronext-ssh authorize fichier.pub | sudo kyronext-ssh stop'; exit 2;;
+esac

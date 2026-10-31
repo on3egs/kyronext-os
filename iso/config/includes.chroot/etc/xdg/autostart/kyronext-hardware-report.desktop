@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Diagnostic matériel local Kyronext
+Exec=/usr/local/bin/kyronext-save-hardware-report
+OnlyShowIn=KDE;
+Terminal=false

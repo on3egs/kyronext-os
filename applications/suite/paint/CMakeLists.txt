@@ -1,0 +1,7 @@
+add_library(KyronextPaintDocument STATIC document.cpp document.h)
+target_link_libraries(KyronextPaintDocument PUBLIC Qt6::Widgets)
+target_include_directories(KyronextPaintDocument PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(kyronext-paint main.cpp)
+target_link_libraries(kyronext-paint PRIVATE KyronextUi KyronextPaintDocument)
+install(TARGETS kyronext-paint RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES kyronext-paint.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Files
+Comment=Explorateur local et opérations KDE KIO
+Exec=kyronext-files
+Icon=kyronext-files
+Terminal=false
+Categories=System;FileManager;

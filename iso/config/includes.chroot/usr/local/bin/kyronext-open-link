@@ -1,0 +1,35 @@
+#!/usr/bin/python3
+"""Ouvrir un lien Kyronext identifié, après validation locale de son adresse."""
+import argparse
+import importlib.util
+from pathlib import Path
+import sys
+
+
+def main(argv=None):
+    path = Path(__file__).resolve().parents[2] / 'lib/kyronext/kyronext_links.py'
+    spec = importlib.util.spec_from_file_location('kyronext_links', path)
+    links_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(links_module)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('link_id', nargs='?', help='Identifiant stable du lien')
+    parser.add_argument('--list', action='store_true', help='Afficher les liens configurés sans interface ni accès réseau')
+    args = parser.parse_args(argv)
+    links, warnings = links_module.load_links()
+    if args.list:
+        for link in links:
+            print(link['id'] + '\t' + link['url'])
+        for warning in warnings:
+            print(warning, file=sys.stderr)
+        return 0 if links else 1
+    link = next((link for link in links if link['id'] == args.link_id), None)
+    if link is None:
+        parser.error('Identifiant absent ou inconnu. Utilisez --list.')
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication(sys.argv[:1])
+    app.setApplicationName('Liens Kyronext')
+    return 0 if links_module.open_link(None, link) else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

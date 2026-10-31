@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Video
+Comment=Lecteur vidéo local Kyronext Systems — By Manix
+Exec=kyronext-video %f
+Icon=kyronext-video
+Categories=AudioVideo;Video;Player;
+MimeType=video/mp4;video/webm;video/x-matroska;video/x-msvideo;
+Terminal=false

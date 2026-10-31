@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kyronext Settings
+Comment=Personnalisation des applications et réglages du bureau
+Exec=kyronext-settings
+Icon=kyronext-suite
+Terminal=false
+Categories=Settings;DesktopSettings;

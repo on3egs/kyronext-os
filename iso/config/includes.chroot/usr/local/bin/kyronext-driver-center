@@ -1,0 +1,207 @@
+#!/usr/bin/python3
+"""Centre matériel natif Qt — diagnostic sans privilèges, actions explicites."""
+import html
+import json
+import os
+from pathlib import Path
+import sys
+
+from PyQt6.QtCore import QProcess, QSettings, Qt
+from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame,
+    QHBoxLayout, QHeaderView, QLabel, QMainWindow, QMessageBox, QPushButton,
+    QScrollArea, QTabWidget, QTextBrowser, QTreeWidget, QTreeWidgetItem,
+    QVBoxLayout, QWidget)
+
+
+class DriverCenter(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setFont(QFont('Segoe UI' if sys.platform == 'win32' else 'Noto Sans', 10))
+        self.report = None
+        self.settings = QSettings('Kyronext', 'DriverCenter')
+        self.rollback_id = self.settings.value('last_wifi_rollback', '', type=str) or None
+        self.process = None
+        self.setWindowTitle('Pilotes & connexion — Kyronext OS')
+        self.setWindowIcon(QIcon.fromTheme('preferences-system'))
+        self.resize(1080, 740)
+        self.setMinimumSize(620, 480)
+        self.setStyleSheet('''
+            QMainWindow, QWidget#surface { background:#0d1017; color:#eaf0fa; }
+            QScrollArea, QWidget#repairPanel { background:#111824; color:#eaf0fa; border:0; }
+            QLabel { color:#eaf0fa; background:transparent; }
+            QLabel#eyebrow { color:#ff647c; font-size:12px; font-weight:700; }
+            QLabel#title { font-size:30px; font-weight:700; }
+            QLabel#muted { color:#abb6c9; }
+            QFrame#card { background:#171e2c; border:1px solid #303b50; border-radius:12px; }
+            QLabel#number { font-size:28px; color:#ff7b8e; font-weight:700; }
+            QPushButton { color:#edf3ff; background:#222e43; border:1px solid #46546d;
+                border-radius:7px; padding:10px 16px; font-weight:600; }
+            QPushButton:hover { background:#303e56; border-color:#ff647c; }
+            QPushButton:focus { border:2px solid #ff7b8e; }
+            QPushButton:disabled { color:#8591a7; background:#19202d; }
+            QPushButton#primary { background:#b52548; border-color:#ef5d79; }
+            QPushButton#primary:hover { background:#d33159; }
+            QTabWidget::pane { border:1px solid #303b50; border-radius:8px; }
+            QTabBar::tab { background:#192130; color:#b9c6dc; padding:12px 16px; }
+            QTabBar::tab:selected { background:#302030; color:#fff; border-bottom:3px solid #ff647c; }
+            QTreeWidget, QTextBrowser { background:#111824; color:#eaf0fa; border:0; padding:10px; }
+            QTreeWidget::item { padding:8px; }
+            QTreeWidget::item:selected { background:#593044; color:#fff; }
+            QHeaderView::section { background:#202b3e; color:#cbd6eb; padding:10px; border:0; }
+            QComboBox { background:#202b3e; color:#fff; padding:10px; border:1px solid #46546d; }
+            QComboBox QAbstractItemView { background:#202b3e; color:#fff; }
+            QStatusBar { color:#aebbd2; background:#111824; }
+        ''')
+        surface = QWidget(); surface.setObjectName('surface')
+        layout = QVBoxLayout(surface); layout.setContentsMargins(26, 24, 26, 18); layout.setSpacing(16)
+        eyebrow = QLabel('KYRONEXT SYSTEMS  /  HARDWARE CARE'); eyebrow.setObjectName('eyebrow'); layout.addWidget(eyebrow)
+        title = QLabel('Votre matériel, en clair.'); title.setObjectName('title'); layout.addWidget(title)
+        subtitle = QLabel('Comprendre • Vérifier • Réparer avec retour arrière'); subtitle.setObjectName('muted'); layout.addWidget(subtitle)
+        cards = QHBoxLayout(); self.cards = []
+        for label in ('PÉRIPHÉRIQUES', 'PILOTES LIÉS', 'RADIO WI-FI'):
+            frame = QFrame(); frame.setObjectName('card'); box = QVBoxLayout(frame)
+            caption = QLabel(label); caption.setObjectName('muted'); box.addWidget(caption)
+            value = QLabel('—'); value.setObjectName('number'); box.addWidget(value)
+            cards.addWidget(frame); self.cards.append(value)
+        layout.addLayout(cards)
+        self.tabs = QTabWidget(); layout.addWidget(self.tabs, 1)
+        self.devices = QTreeWidget(); self.devices.setHeaderLabels(['Bus / emplacement', 'Identifiant matériel', 'Pilote', 'État'])
+        self.devices.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.devices.header().setStretchLastSection(True)
+        self.devices.setAccessibleName('Matériel détecté et pilotes liés')
+        self.tabs.addTab(self.devices, 'Matériel')
+        repair = QWidget(); repair.setObjectName('repairPanel'); repair_layout = QVBoxLayout(repair)
+        info = QLabel('Une réparation Wi-Fi active la radio et lève les blocages logiciels.\nLes profils, mots de passe, Ethernet et services SSH ne sont pas reconfigurés.\nElle peut toutefois reconnecter le Wi-Fi ; elle ne remplace pas un pilote manquant.')
+        info.setWordWrap(True); repair_layout.addWidget(info)
+        self.repair = QPushButton('Réparer ma connexion Wi-Fi'); self.repair.setObjectName('primary')
+        self.repair.clicked.connect(self.confirm_repair); repair_layout.addWidget(self.repair)
+        self.undo = QPushButton('Annuler la dernière réparation Wi-Fi'); self.undo.setEnabled(bool(self.rollback_id))
+        self.undo.clicked.connect(self.confirm_undo); repair_layout.addWidget(self.undo)
+        offline = QLabel('RÉSERVE HORS LIGNE · paquets et dépendances vérifiés'); offline.setObjectName('eyebrow'); repair_layout.addWidget(offline)
+        self.firmware = QComboBox(); self.firmware.setAccessibleName('Firmware de la réserve hors ligne')
+        self.load_firmware(); repair_layout.addWidget(self.firmware)
+        install = QPushButton('Réinstaller le firmware sélectionné…'); install.clicked.connect(self.confirm_install); repair_layout.addWidget(install)
+        self.b43_install = QPushButton('Installer le firmware Broadcom b43 (connexion requise)…')
+        self.b43_install.setEnabled(False)
+        self.b43_install.clicked.connect(self.confirm_b43_install)
+        repair_layout.addWidget(self.b43_install)
+        verify = QPushButton('Vérifier l’intégrité de la réserve'); verify.clicked.connect(lambda: self.launch('verify-offline')); repair_layout.addWidget(verify)
+        note = QLabel('Un nom de fabricant ne suffit pas pour choisir un firmware. Consultez les identifiants et le pilote dans le diagnostic. Sur certains Acer Aspire 7004 WSMi, le Wi-Fi Broadcom b43 a besoin de son firmware téléchargé via Debian; le bouton n’apparaît que si le pilote correspond au matériel. Aucun flash matériel automatique.')
+        note.setWordWrap(True); note.setObjectName('muted'); repair_layout.addWidget(note); repair_layout.addStretch()
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(repair); self.tabs.addTab(scroll, 'Connexion et réserve')
+        self.details = QTextBrowser(); self.details.setOpenExternalLinks(False); self.tabs.addTab(self.details, 'Rapport et conseils')
+        toolbar = QHBoxLayout()
+        self.scan = QPushButton('Analyser le matériel'); self.scan.setObjectName('primary'); self.scan.clicked.connect(lambda: self.launch('diagnose')); toolbar.addWidget(self.scan)
+        export = QPushButton('Exporter le rapport…'); export.clicked.connect(self.export); toolbar.addWidget(export)
+        toolbar.addStretch(); signature = QLabel('BY MANIX'); signature.setObjectName('muted'); toolbar.addWidget(signature); layout.addLayout(toolbar)
+        self.setCentralWidget(surface); self.statusBar().showMessage('Diagnostic local • aucune modification sans action explicite')
+        self.launch('diagnose')
+
+    def load_firmware(self):
+        try:
+            manifest = json.loads(Path('/usr/share/kyronext/drivers/offline/manifest.json').read_text())
+            for name in sorted(manifest['firmware_allowlist']): self.firmware.addItem(name)
+        except (OSError, ValueError, KeyError):
+            self.firmware.addItem('Réserve non disponible dans cette image'); self.firmware.setEnabled(False)
+
+    def launch(self, action, value=None, admin=False):
+        if self.process is not None:
+            QMessageBox.information(self, 'Action en cours', 'Attendez la fin de l’action en cours.'); return
+        args = ['/usr/local/bin/kyronext-drivers', action]
+        if value: args.append(value)
+        program = 'pkexec' if admin else args.pop(0)
+        self.process = QProcess(self); process = self.process
+        self.scan.setEnabled(False); self.repair.setEnabled(False)
+        self.statusBar().showMessage('Authentification / travail en cours…' if admin else 'Diagnostic en cours…')
+        process.finished.connect(lambda code, status: self.finished(process, action, code))
+        process.errorOccurred.connect(lambda error: self.failed_start(process, error))
+        process.start(program, args)
+
+    def failed_start(self, process, error):
+        if error == QProcess.ProcessError.FailedToStart:
+            QMessageBox.warning(self, 'Outil indisponible', process.errorString())
+            self.process = None; self.scan.setEnabled(True); self.repair.setEnabled(True)
+
+    def finished(self, process, action, code):
+        output = bytes(process.readAllStandardOutput()).decode(errors='replace')
+        errors = bytes(process.readAllStandardError()).decode(errors='replace')
+        self.process = None; self.scan.setEnabled(True); self.repair.setEnabled(True)
+        if code:
+            QMessageBox.warning(self, 'Action non effectuée ou incomplète', (errors or output or 'Authentification annulée')[-3000:])
+            self.statusBar().showMessage('Action interrompue — consulter le message'); return
+        try: data = json.loads(output)
+        except ValueError:
+            QMessageBox.warning(self, 'Réponse illisible', output[-2000:]); return
+        if action == 'diagnose':
+            self.display_report(data)
+        else:
+            if action == 'repair-wifi':
+                self.rollback_id = data.get('rollback_id'); self.undo.setEnabled(bool(self.rollback_id))
+                self.settings.setValue('last_wifi_rollback', self.rollback_id)
+            if action == 'restore-wifi':
+                self.rollback_id = None; self.undo.setEnabled(False); self.settings.remove('last_wifi_rollback')
+            QMessageBox.information(self, 'Kyronext', data.get('message', f"Réserve vérifiée : {len(data.get('packages', []))} paquets."))
+        self.statusBar().showMessage('Terminé • aucune compatibilité physique présumée')
+
+    def display_report(self, data):
+        self.report = data; self.devices.clear()
+        self.b43_install.setEnabled(any(
+            device.get('bus') == 'pci'
+            and any(module in ('b43', 'b43legacy') for module in device.get('candidates', []))
+            for device in data.get('devices', [])))
+        for device in data['devices']:
+            item = QTreeWidgetItem([device['bus']+' / '+device['address'], device['vendor']+' : '+device['product'], device['driver'] or '—', device['state']])
+            item.setToolTip(2, 'Modules possibles : '+', '.join(device['candidates'])+'\nFirmwares à examiner : '+', '.join(device['firmware_packages_to_check']))
+            self.devices.addTopLevelItem(item)
+        self.cards[0].setText(str(len(data['devices'])))
+        self.cards[1].setText(str(sum(bool(d['driver']) for d in data['devices'])))
+        self.cards[2].setText({'enabled':'ACTIVE', 'disabled':'COUPÉE'}.get(data['wifi']['radio'], 'INCONNUE'))
+        self.details.setHtml('<h2>Rapport matériel</h2><p>'+html.escape(data['notice'])+'</p><pre>'+html.escape(json.dumps(data, ensure_ascii=False, indent=2))+'</pre>')
+
+    def confirm_repair(self):
+        if QMessageBox.question(self, 'Activer le Wi-Fi ?', 'Kyronext sauvegardera l’état radio, activera le Wi-Fi et lèvera ses blocages logiciels. Autoriser cette action ?') == QMessageBox.StandardButton.Yes:
+            self.launch('repair-wifi', admin=True)
+
+    def confirm_undo(self):
+        if self.rollback_id and QMessageBox.question(self, 'Rétablir l’état radio ?', 'Le Wi-Fi pourra être coupé si tel était son état précédent. Continuer ?') == QMessageBox.StandardButton.Yes:
+            self.launch('restore-wifi', self.rollback_id, admin=True)
+
+    def confirm_install(self):
+        if not self.firmware.isEnabled(): return
+        package = self.firmware.currentText()
+        if QMessageBox.question(self, 'Réinstaller un firmware ?', package+' sera réinstallé depuis la réserve vérifiée, sans téléchargement ni suppression de paquet. Aucun module ne sera déchargé. Continuer ?') == QMessageBox.StandardButton.Yes:
+            self.launch('install-firmware', package, admin=True)
+
+    def confirm_b43_install(self):
+        if not self.b43_install.isEnabled(): return
+        message = ('Le paquet Debian firmware-b43-installer va chercher sur Internet le microcode Broadcom nécessaire. '
+                   'Il n’est pas inclus dans l’ISO à cause de sa licence. Connectez-vous par Ethernet ou partage USB. '
+                   'Cette action installe le paquet demandé sans supprimer ni mettre à niveau d’autres paquets. '
+                   'Un redémarrage peut être nécessaire. Continuer ?')
+        if QMessageBox.question(self, 'Firmware Broadcom b43', message) == QMessageBox.StandardButton.Yes:
+            self.launch('install-b43-firmware', admin=True)
+
+    def export(self):
+        if self.report is None:
+            QMessageBox.information(self, 'Rapport', 'Effectuez un diagnostic avant l’export.'); return
+        path, _ = QFileDialog.getSaveFileName(self, 'Exporter un nouveau rapport', 'kyronext-materiel.json', 'Rapport JSON (*.json)')
+        if not path: return
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w', encoding='utf-8') as out: json.dump(self.report, out, ensure_ascii=False, indent=2)
+        except OSError as exc: QMessageBox.warning(self, 'Export impossible', str(exc))
+        else: self.statusBar().showMessage('Rapport exporté — relisez son contenu avant partage')
+
+    def closeEvent(self, event):
+        if self.process is not None:
+            QMessageBox.information(self, 'Travail en cours', 'Attendez la fin de l’action avant de fermer cette fenêtre.'); event.ignore()
+        else: event.accept()
+
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    app.setApplicationName('Pilotes & connexion Kyronext')
+    app.setDesktopFileName('kyronext-driver-center')
+    window = DriverCenter(); window.show()
+    sys.exit(app.exec())

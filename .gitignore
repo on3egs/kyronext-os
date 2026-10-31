@@ -1,0 +1,5 @@
+/build/*
+/private/*
+/logs/*
+/releases/*
+__pycache__/

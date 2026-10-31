@@ -1,0 +1,6 @@
+[General]
+Name=Kyronext OS
+Version=0.1 Developer Preview
+LogoPath=/usr/share/icons/hicolor/scalable/apps/kyronext-logo.svg
+Website=https://kyronext.eu/kyronext-os/
+ShowBuild=false
